@@ -88,23 +88,32 @@ plot.dates <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 #OUTPUT
 # A dataframe with the same columns as the input obsdat but (potentially) fewer rows
 thin.events <- function(obsdat, interval, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
+  sp.stn <- paste(obsdat$species, obsdat$station, sep=".")
+  date <- as.POSIXct(obsdat$date, format=format, tz=tz)
+  i <- order(sp.stn, date)
+  obsdat <- obsdat[i, ]
+  sp.stn <- sp.stn[i]
+  date <- date[i]
+
   if(!all(c("species","station","date") %in% names(obsdat))) 
     stop("obsdat must contain columns species, station and date")
-  date <- as.POSIXct(obsdat$date, format=format, tz=tz)
   if(any(is.na(date))) 
     stop("At least some dates in obsdat are missing or not convertible to POSIXct")
   
-  interval <- interval*60^2
-  sp.stn <- paste(obsdat$species, obsdat$station, sep=".")
-  ii <- i <- 10
+  ii <- i <- 1
   while(i<length(date)){
     base <- tail(ii,1)
     i <- base+1
-    while(date[i]-date[base]<interval & sp.stn[i]==sp.stn[base] & i<length(date)) i <- i+1
-    if(date[i]-date[base]>=interval | sp.stn[i]!=sp.stn[base]) ii <- c(ii,i)
+    while(difftime(date[i], date[base], units="hours")<interval & 
+          sp.stn[i]==sp.stn[base] & 
+          i<length(date)) i <- i+1
+    if(difftime(date[i], date[base], units="hours")>=interval | 
+       sp.stn[i]!=sp.stn[base]) ii <- c(ii,i)
   }
   res <- obsdat[ii, ]
-  res$time <- hour(date[ii]) + minute(date[ii])/60 + second(date[ii])/60^2
+  res$time <- as.numeric(format(date[ii], "%H")) + 
+    as.numeric(format(date[ii], "%M"))/60 + 
+    as.numeric(format(date[ii], "%H"))/60^2
   res
 }
 
@@ -141,9 +150,9 @@ calc.traprate <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
   events[is.na(events)] <- 0
   rownames(events) <- NULL
   days <- as.numeric(with(depdat, difftime(stop, start, units="days")))
-  effort <- cbind(station=stations, days=days)
-  events <- cbind(station=stations, as.data.frame.matrix(events))
-  traprate <- cbind(station=stations, events[,-1]/days)
+  effort <- data.frame(station=stations, days=days)
+  events <- data.frame(station=stations, as.data.frame.matrix(events))
+  traprate <- data.frame(station=stations, events[,-1]/days)
   list(effort=effort, events=events, traprate=traprate)
 }
 
@@ -160,14 +169,35 @@ calc.traprate <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 #    start, stop: character or POSIX date-times of deployment starts and stops; converted using as.POSIXct
 # interval: occasion length in days
 # offset: first occasion starts at min(start)+offset in days
+# order: vector of station names against which to order the matrix rows
+# format:
+# tz:
 
 #OUTPUT
 #A list with items:
 # detection: detection matrix
 # effort: effort matrix (in days)
 # cuts: cut times of occasions
-get.dmatrix <- function(obsdat, depdat, interval, offset=0, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
+get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 
+  get.effort <- function(stn){
+    s <- depdat$station==stn
+    stt <- start[s]
+    stp <- stop[s]
+    grd1 <- expand.grid(tail(steps, -1), stt)
+    grd2 <- expand.grid(head(steps, -1), stp)
+    dif1 <- matrix(apply(grd1, 1, function(x) x[2]-x[1]), ncol=length(stt))
+    dif2 <- matrix(apply(grd2, 1, function(x) x[1]-x[2]), ncol=length(stp))
+    i <- apply(cbind(dif1, dif2), 1, function(x) sum(x<0) %% 2 == sum(s) %% 2)
+    i1 <- apply(rbind(1, dif1), 2, function(x) which(abs(diff(x<0))==1))
+    i2 <- apply(rbind(dif2, 1), 2, function(x) which(abs(diff(x<0))==1)) + 1
+    res <- steps
+    res[c(i1, i2)] <- c(stt,stp)
+    res <- diff(res)
+    res[i] <- 0
+    res
+  }
+  
   if(!all(c("station","date") %in% names(obsdat))) 
     stop("obsdat must contain columns station and date")
   if(!all(c("station","start","stop") %in% names(depdat))) 
@@ -200,34 +230,24 @@ get.dmatrix <- function(obsdat, depdat, interval, offset=0, format="%Y:%m:%d %H:
   maxdate <- as.numeric(max(depdat$stop))/secperday
   steps <- seq(mindate, maxdate, interval)
   if(tail(steps,1) < maxdate) steps <- c(steps, maxdate)
-  display.steps <- as.POSIXct(steps*secperday, format=format, tz="UTC", origin="01/01/1970 00:00:00")
+  display.steps <- as.POSIXct(steps*secperday, tz="UTC", origin="1970-01-01 00:00:00")
   obs <- as.numeric(obsdat$date)/secperday
   start <- as.numeric(depdat$start)/secperday
   stop <- as.numeric(depdat$stop)/secperday
 
   station <- c(as.character(obsdat$station), as.character(depdat$station), 
                rep("", length(steps)-1))
-  period <- c(sapply(obs, function(x) sum(x>steps[-length(steps)])),
+  occasion <- c(sapply(obs, function(x) sum(x>steps[-length(steps)])),
               rep("", nrow(depdat)), 1:(length(steps)-1))
-  dmat <- table(station, period)
+  dmat <- table(station, occasion)
   attributes(dmat)$class <- "matrix"
   dmat <- dmat[-1,-1]
-  dmat <- dmat[match(depdat$station, rownames(dmat)),]
+  if(!is.null(order)) dmat <- dmat[match(order, rownames(dmat)),]
   dmat <- dmat[, order(as.numeric(colnames(dmat)))]
   dmat[dmat>0] <- 1
-  firstperiods <- sapply(start, function(x) sum(x>=head(steps,-1)))
-  lastperiods <- sapply(stop, function(x) sum(x>head(steps,-1)))
-  mat <- matrix(rep(1:(length(steps)-1), each=nrow(depdat)), nrow=nrow(depdat))
-  dmat[mat<firstperiods | mat>lastperiods] <- NA
-
-  emat <- dmat
-  emat[!is.na(emat)] <- interval
-  diffstart <- matrix(apply(expand.grid(start, tail(steps,-1)), 1, diff), nrow=length(start))
-  diffstop <- -matrix(apply(expand.grid(stop, head(steps,-1)), 1, diff), nrow=length(stop))
-  i <- (firstperiods-1)*nrow(diffstart)+1:nrow(diffstart)
-  emat[i] <- diffstart[i]
-  i <- (lastperiods-1)*nrow(diffstart)+1:nrow(diffstart)
-  emat[i] <- diffstop[i]
+  emat <- t(sapply(rownames(dmat), get.effort))
+  dmat[emat==0] <- NA
+  dimnames(emat) <- dimnames(dmat)
   
   list(detection=dmat, effort=emat, cuts=display.steps, outofbounds=duffdf)
 }
