@@ -53,22 +53,26 @@ read.multi <- function(dir, type=c(".csv", ".txt", ".xls", ".xlsx"),
 #    date: character or POSIX date-times of observations; converted using as.POSIXct
 # format: format for date conversion passed to as.POSIXct
 # tz: time zone for date conversion, passed to as.POSIXct
-plot.dates <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
-  dates <- as.POSIXct(obsdat$date, format, tz=tz)
-  starts <- as.POSIXct(depdat$start, format, tz=tz)
-  stops <- as.POSIXct(depdat$stop, format, tz=tz)
-  rng <- range(c(starts, stops, dates))
+plot.dates <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
+  obsdat$date <- as.POSIXct(obsdat$date, format, tz=tz)
+  depdat$start <- as.POSIXct(depdat$start, format, tz=tz)
+  depdat$stop <- as.POSIXct(depdat$stop, format, tz=tz)
+  rng <- range(c(depdat$start, depdat$stop, obsdat$date))
   attr(rng, "tzone") <- "UTC"
-  plot(rng, c(1,nrow(depdat)+0.5), type="n", xlab="", ylab="", yaxt="n")
-  axis(2, (1:nrow(depdat))+0.05, depdat$station, las=1, cex.axis=0.7)
-  for(i in 1:nrow(depdat)){
-    x <- c(starts[i], stops[i])
-    attr(x, "tzone") <- "UTC"
-    lines(x, rep(i,2))
-  }
-  for(i in 1:nrow(depdat)){
-    x <- dates[obsdat$station %in% depdat$station[i]]
-    points(x, rep(i+0.1, length(x)), cex=0.2, pch=16, col=2)
+  stn <- sort(unique(depdat$station))
+  n <- length(stn)
+  plot(rng, c(1,n+0.5), type="n", xlab="", ylab="", yaxt="n")
+  axis(2, (1:n)+0.05, stn, las=1, cex.axis=0.7)
+
+  for(i in 1:n){
+    obs <- subset(obsdat, station==stn[i])$date
+    points(obs, rep(i+0.1, length(obs)), cex=0.2, pch=16, col=2)
+    
+    dep <- depdat[depdat$station==stn[i], c("start","stop")]
+    attr(dep, "tzone") <- "UTC"
+    for(d in 1:nrow(dep)){
+      lines(dep[d, ], rep(i,2))
+    }
   }
 }
 
