@@ -53,7 +53,7 @@ read.multi <- function(dir, type=c(".csv", ".txt", ".xls", ".xlsx"),
 #    date: character or POSIX date-times of observations; converted using as.POSIXct
 # format: format for date conversion passed to as.POSIXct
 # tz: time zone for date conversion, passed to as.POSIXct
-plot.dates <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
+plot.deployments <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
   obsdat$date <- as.POSIXct(obsdat$date, format, tz=tz)
   depdat$start <- as.POSIXct(depdat$start, format, tz=tz)
   depdat$stop <- as.POSIXct(depdat$stop, format, tz=tz)
@@ -182,7 +182,13 @@ event.count <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
 # detection: detection matrix
 # effort: effort matrix (in days)
 # cuts: cut times of occasions
-get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
+get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
+
+  check.bounds <- function(i){
+    dif1 <- start[obsdat$station[i]==depdat$station] - obs[i]
+    dif2 <- obs[i] - stop[obsdat$station[i]==depdat$station]
+    sum(c(dif1, dif2)<0) %% 2 != length(dif1) %% 2
+  }
 
   get.effort <- function(stn){
     s <- depdat$station==stn
@@ -207,29 +213,12 @@ get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="
   if(!all(c("station","start","stop") %in% names(depdat))) 
     stop("depdat must contain columns station, start and stop")
   
+  secperday <- 24*60^2
   obsdat$station <- as.character(obsdat$station)
   depdat$station <- as.character(depdat$station)
   obsdat$date <- as.POSIXct(obsdat$date, format=format, tz=tz)
   depdat$start <- as.POSIXct(depdat$start, format=format, tz=tz)
   depdat$stop <- as.POSIXct(depdat$stop, format=format, tz=tz)
-  
-  if(any(is.na(obsdat$date))) 
-    stop("At least some dates in obsdat are missing or not convertible to POSIXct")
-  if(any( is.na(depdat$start) | is.na(depdat$stop) ))
-    stop("At least some dates in depdat are missing or not convertible to POSIXct")
-  if(!all(unique(obsdat$station) %in% depdat$station)) 
-    stop("Not all stations in obsdat have data in depdat")
-  m <- match(obsdat$station, depdat$station)
-  ss <- data.frame(start=depdat$start[m], stop=depdat$stop[m])
-  duff <- obsdat$date<ss$start | obsdat$date>ss$stop
-  if(sum(duff)>0){
-    duffdf <- data.frame(obsdat[duff, c("station","date")], ss[duff, ])
-    warning("Some observations fall outide given deployment times (see outofbounds output component)")
-    obsdat <- obsdat[!duff, ]
-  } else
-    duffdf <- NULL
-  
-  secperday <- 24*60^2
   mindate <- as.numeric(min(depdat$start))/secperday+offset
   maxdate <- as.numeric(max(depdat$stop))/secperday
   steps <- seq(mindate, maxdate, interval)
@@ -238,6 +227,21 @@ get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="
   obs <- as.numeric(obsdat$date)/secperday
   start <- as.numeric(depdat$start)/secperday
   stop <- as.numeric(depdat$stop)/secperday
+  
+  if(any(is.na(obsdat$date))) 
+    stop("At least some dates in obsdat are missing or not convertible to POSIXct")
+  if(any( is.na(depdat$start) | is.na(depdat$stop) ))
+    stop("At least some dates in depdat are missing or not convertible to POSIXct")
+  if(!all(unique(obsdat$station) %in% depdat$station)) 
+    stop("Not all stations in obsdat have data in depdat")
+  duff <- !sapply(1:length(obs), check.bounds)
+  if(sum(duff)>0){
+    duffdf <- obsdat[duff, ]
+    warning("Some observations fall outide given deployment times (see outofbounds output component)")
+    obsdat <- obsdat[!duff, ]
+    obs <- obs[!duff]
+  } else
+    duffdf <- NULL
 
   station <- c(as.character(obsdat$station), as.character(depdat$station), 
                rep("", length(steps)-1))
