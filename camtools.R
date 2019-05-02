@@ -128,7 +128,7 @@ thin.events <- function(obsdat, interval, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 
 #OUTPUT
 # A stations by species matrix of observation counts
-calc.traprate <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
+event.count <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
   if(!all(c("species","station") %in% names(obsdat))) 
     stop("obsdat must contain columns species and station")
   if(!all(c("station","start","stop") %in% names(depdat))) 
@@ -141,19 +141,19 @@ calc.traprate <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
   depdat$start <- depd0
   depdat$stop <- depd1
   
+  effort.days <- as.numeric(with(depdat, difftime(stop, start, units="days")))
+  effort.days <- tapply(effort.days, depdat$station, sum)
   events <- table(obsdat$station, obsdat$species)
-  stations <- as.character(unique(depdat$station))
-  if(any(!rownames(events) %in% stations))
+  station <- rownames(effort.days)
+
+  if(any(!rownames(events) %in% station))
     stop("Not all stations in obsdat are present in depdat")
-  i <- match(stations, rownames(events))
-  events <- events[i,]
+  
+  events <- events[match(station, rownames(events)), ]
   events[is.na(events)] <- 0
   rownames(events) <- NULL
-  days <- as.numeric(with(depdat, difftime(stop, start, units="days")))
-  effort <- data.frame(station=stations, days=days)
-  events <- data.frame(station=stations, as.data.frame.matrix(events))
-  traprate <- data.frame(station=stations, events[,-1]/days)
-  list(effort=effort, events=events, traprate=traprate)
+  effort.days <- as.vector(effort.days)
+  data.frame(station, effort.days, as.data.frame.matrix(events))
 }
 
 
