@@ -44,8 +44,43 @@ read.multi <- function(dir, type=c(".csv", ".txt", ".xls", ".xlsx"),
   rbindlist(dat, fill=TRUE, idcol=idcol)
 }
 
+error.check <- function(obsdat, depdat=NULL){
+  msgs1 <- c("obsdat must contain columns station, species and date",
+             "depdat must contain columns station, start and stop")
+  msgs2 <- c("Some dates in obsdat are missing or not convertible to POSIXct",
+            "Some dates in depdat are missing or not convertible to POSIXct",
+            "Not all stations in obsdat have data in depdat")
+  
+  if(is.null(depdat)){
+    if(!all(c("species","station","date") %in% names(obsdat))) 
+      stop(msgs1[1])
+  } else{
+    ok <- c(all(c("species","station","date") %in% names(obsdat)),
+            all(c("station","start","stop") %in% names(depdat)))
+    if(any(!ok)) stop(paste(msgs1[!ok], collapse="\n  "))
+  }
+
+  obsstn <- as.character(obsdat$station)
+  obs <- as.numeric(as.POSIXct(obsdat$date, format=format, tz=tz))
+  if(!is.null(depdat)){
+    depstn <- as.character(depdat$station)
+    start <- as.numeric(as.POSIXct(depdat$start, format=format, tz=tz))
+    stop <- as.numeric(as.POSIXct(depdat$stop, format=format, tz=tz))
+  }
+
+  if(is.null(depdat)){
+    if(any(is.na(obs))) stop(msgs2[1])
+  } else{
+    ok <- c(!any(is.na(obs)), 
+            !any( is.na(start) | is.na(stop) ),
+            all(unique(obsstn) %in% depstn))
+    if(any(!ok)) stop(paste(msgs2[!ok], collapse="\n  "))
+  }
+}
+
 check.dates <- function(obsdat, depdat){
-  secperday <- 24*60^2
+  error.check(obsdat, depdat)
+  
   obsstn <- as.character(obsdat$station)
   depstn <- as.character(depdat$station)
   obs <- as.numeric(as.POSIXct(obsdat$date, format=format, tz=tz))
@@ -71,9 +106,14 @@ check.dates <- function(obsdat, depdat){
 # format: format for date conversion passed to as.POSIXct
 # tz: time zone for date conversion, passed to as.POSIXct
 plot.deployments <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
+  error.check(obsdat, depdat)
+  
+  obsdat$station <- as.character(obsdat$station)
+  depdat$station <- as.character(depdat$station)
   obsdat$date <- as.POSIXct(obsdat$date, format, tz=tz)
   depdat$start <- as.POSIXct(depdat$start, format, tz=tz)
   depdat$stop <- as.POSIXct(depdat$stop, format, tz=tz)
+  
   rng <- range(c(depdat$start, depdat$stop, obsdat$date))
   attr(rng, "tzone") <- "UTC"
   stn <- sort(unique(depdat$station))
@@ -109,6 +149,8 @@ plot.deployments <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC
 #OUTPUT
 # A dataframe with the same columns as the input obsdat but (potentially) fewer rows
 thin.events <- function(obsdat, interval, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
+  error.check(obsdat)
+  
   sp.stn <- paste(obsdat$species, obsdat$station, sep=".")
   date <- as.POSIXct(obsdat$date, format=format, tz=tz)
   i <- order(sp.stn, date)
@@ -116,11 +158,6 @@ thin.events <- function(obsdat, interval, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
   sp.stn <- sp.stn[i]
   date <- date[i]
 
-  if(!all(c("species","station","date") %in% names(obsdat))) 
-    stop("obsdat must contain columns species, station and date")
-  if(any(is.na(date))) 
-    stop("At least some dates in obsdat are missing or not convertible to POSIXct")
-  
   ii <- i <- 1
   while(i<length(date)){
     base <- tail(ii,1)
@@ -150,11 +187,8 @@ thin.events <- function(obsdat, interval, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 #OUTPUT
 # A stations by species matrix of observation counts
 event.count <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
-  if(!all(c("species","station") %in% names(obsdat))) 
-    stop("obsdat must contain columns species and station")
-  if(!all(c("station","start","stop") %in% names(depdat))) 
-    stop("depdat must contain columns station, start and stop")
-  
+  error.check(obsdat, depdat)
+
   checked.obs <- check.dates(obsdat, depdat)
   obsdat <- checked.obs$good.data
   if(nrow(checked.obs$bad.data)>0)
@@ -162,22 +196,13 @@ event.count <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
   
   depdat$start <- as.POSIXct(depdat$start, format=format, tz=tz)
   depdat$stop <- as.POSIXct(depdat$stop, format=format, tz=tz)
-  if(any( is.na(depdat$start) | is.na(depdat$stop) ))
-    stop("At least some dates in depdat are missing or not convertible to POSIXct")
-
   obsdat$station <- as.character(obsdat$station)
   depdat$station <- as.character(depdat$station)
-  if(!all(unique(obsdat$station) %in% depdat$station)) 
-    stop("Not all stations in obsdat have data in depdat")
-  
+
   effort.days <- as.numeric(with(depdat, difftime(stop, start, units="days")))
   effort.days <- tapply(effort.days, depdat$station, sum)
   events <- table(obsdat$station, obsdat$species)
   station <- rownames(effort.days)
-
-  if(any(!rownames(events) %in% station))
-    stop("Not all stations in obsdat are present in depdat")
-  
   events <- events[match(station, rownames(events)), ]
   events[is.na(events)] <- 0
   rownames(events) <- NULL
@@ -227,30 +252,19 @@ get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="
     res
   }
   
-  if(!all(c("station","date") %in% names(obsdat))) 
-    stop("obsdat must contain columns station and date")
-  if(!all(c("station","start","stop") %in% names(depdat))) 
-    stop("depdat must contain columns station, start and stop")
+  error.check(obsdat, depdat)
   checked.obs <- check.dates(obsdat, depdat)
   obsdat <- checked.obs$good.data
   duffdf <- checked.obs$bad.data
   if(nrow(checked.obs$bad.data)>0)
     warning("Some observations fall outide given deployment times and were discarded\n  See outofbounds output component to check which")
 
+  secperday <- 24*60^2
   obsdat$station <- as.character(obsdat$station)
   depdat$station <- as.character(depdat$station)
   obsdat$date <- as.POSIXct(obsdat$date, format=format, tz=tz)
   depdat$start <- as.POSIXct(depdat$start, format=format, tz=tz)
   depdat$stop <- as.POSIXct(depdat$stop, format=format, tz=tz)
-  
-  if(any(is.na(obsdat$date))) 
-    stop("At least some dates in obsdat are missing or not convertible to POSIXct")
-  if(any( is.na(depdat$start) | is.na(depdat$stop) ))
-    stop("At least some dates in depdat are missing or not convertible to POSIXct")
-  if(!all(unique(obsdat$station) %in% depdat$station)) 
-    stop("Not all stations in obsdat have data in depdat")
-  
-  secperday <- 24*60^2
   mindate <- as.numeric(min(depdat$start))/secperday+offset
   maxdate <- as.numeric(max(depdat$stop))/secperday
   steps <- seq(mindate, maxdate, interval)
