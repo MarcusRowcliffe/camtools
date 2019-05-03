@@ -154,13 +154,21 @@ event.count <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
     stop("obsdat must contain columns species and station")
   if(!all(c("station","start","stop") %in% names(depdat))) 
     stop("depdat must contain columns station, start and stop")
-
-  depd0 <- as.POSIXct(depdat$start, format=format, tz=tz)
-  depd1 <- as.POSIXct(depdat$stop, format=format, tz=tz)
-  if(any( is.na(depd0) | is.na(depd1) ))
+  
+  checked.obs <- check.dates(obsdat, depdat)
+  obsdat <- checked.obs$good.data
+  if(nrow(checked.obs$bad.data)>0)
+    warning("Some observations fall outide given deployment times and were discarded\n  Use check.dates() to check which")
+  
+  depdat$start <- as.POSIXct(depdat$start, format=format, tz=tz)
+  depdat$stop <- as.POSIXct(depdat$stop, format=format, tz=tz)
+  if(any( is.na(depdat$start) | is.na(depdat$stop) ))
     stop("At least some dates in depdat are missing or not convertible to POSIXct")
-  depdat$start <- depd0
-  depdat$stop <- depd1
+
+  obsdat$station <- as.character(obsdat$station)
+  depdat$station <- as.character(depdat$station)
+  if(!all(unique(obsdat$station) %in% depdat$station)) 
+    stop("Not all stations in obsdat have data in depdat")
   
   effort.days <- as.numeric(with(depdat, difftime(stop, start, units="days")))
   effort.days <- tapply(effort.days, depdat$station, sum)
@@ -227,7 +235,7 @@ get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="
   obsdat <- checked.obs$good.data
   duffdf <- checked.obs$bad.data
   if(nrow(checked.obs$bad.data)>0)
-    warning("Some observations fall outide given deployment times (see outofbounds output component)")
+    warning("Some observations fall outide given deployment times and were discarded\n  See outofbounds output component to check which")
 
   obsdat$station <- as.character(obsdat$station)
   depdat$station <- as.character(depdat$station)
