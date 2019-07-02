@@ -1,6 +1,44 @@
 library(data.table) #for rbindlist, used in read.multi
 library(readxl) #for read_xls and read_xlsx, used in read.multi
 
+#READING DATA#############################################
+
+#extract.tags#
+
+#Extracts and separates tags from image metadata. Where contacts are flagged and
+#species labelled, expects the column headings "contact" and "species" to be used.
+#Where multiple species or individuals per image are tagged
+extract.tags <- function(dat, fieldsep=", ", headsep=": ", tagcol="Keywords",
+                         exifcols=c("SourceFile", "CreateDate", tagcol)){
+  f1 <- function(x,i)
+    if(i==1) x[i] else
+      if(length(x)==1) 1 else x[i]
+  f2 <- function(x, i) lapply(x, f1, i=i)
+  
+  dat1 <- dat[, tagcol]
+  datlist1 <- strsplit(dat1, fieldsep)
+  datlist2 <- lapply(datlist1, strsplit, headsep)
+  dat2 <- data.frame(row = rep(1:length(datlist2), lapply(datlist2, length)),
+                     head = unlist(lapply(datlist2, f2, i=1)),
+                     val = unlist(lapply(datlist2, f2, i=2)))
+  dat3 <- reshape::cast(dat2, row~head, value="val")
+  dat4 <- cbind(dat[, exifcols], dat3[, -1])
+  dat5 <- dat4
+  nsp <- sum(grepl("species", names(dat4)))
+  if(nsp>1){
+    for(sp in 2:nsp){
+      hd <- c(paste0("contact", sp), paste0("species", sp))
+      dat4[, c("contact1", "species1")] <- dat4[, hd]
+      dat5 <- rbind(dat5, subset(dat4, !is.na(species1)))
+      dat4 <- dat4[, !names(dat4) %in% hd]
+      dat5 <- dat5[, !names(dat5) %in% hd]
+    }
+  }
+  names(dat5)[grepl("species", names(dat5))] <- "species"
+  names(dat5)[grepl("contact", names(dat5))] <- "contact"
+  dat5
+}
+
 #read.multi
 #Read and stack multiple data files into a single dataframe.
 #Reads the following file types using the relevant read function:
