@@ -13,21 +13,20 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Four dataframes are needed:
 
-1. Metadata extracted from tagged images
+1. Metadata extracted from tagged images (**exifdat** below)
 
-2. Animal position data generated using tracking function `predict.pos` from package `CTtracking`
+2. Animal position data generated using tracking function `predict.pos` from package `CTtracking` (**posdat** below)
 
-3. Animal speed data generated using tracking function `seq.summary` from package `CTtracking`
+3. Animal speed data generated using tracking function `seq.summary` from package `CTtracking` (**seqdat** below)
 
-4. A deployment table, indicating the site and start and end date/times of each camera deployment.
-
-Assuming you've already created and saved the first three, they can be read in, for example:
+4. A deployment table, indicating the site and start and end date/times of each camera deployment (**depdat** below).
 
 ```{r}
 path <- "D:/Survey_xxx"
 exifdat <- read.csv(file.path(path, "exifdata.csv"), stringsAsFactors = FALSE)
 posdat <- read.csv(file.path(path, "posdat.csv"), stringsAsFactors = FALSE)
 seqdat <- read.csv(file.path(path, "seqdat.csv"), stringsAsFactors = FALSE)
+depdat <- read.csv(file.path(path, "depdat.csv"), stringsAsFactors = FALSE)
 ```
 
 
@@ -51,7 +50,7 @@ tagdat$station <- substr(tagdat$station, 1, 2)
 rownames(depdat) <- NULL
 ```
 
-For the deployment table, create a csv file with three columns named exactly "station"", "start"" and "stop". **station** should contain station identifiers that will match with those used during tagging. **start** and **stop** should contain text date/time values in a consistent format, preferably *yyyy:mm:dd HH:MM:SS*. This is the usual format for image metadata, and later processing functions expect this by default, although you can specify a different format if you have to. Fig. 1 shows an example deployment dataframe. Note that if you use Excel to create the csv file for this, it's strongly recommended to force text format on the date/time values by preceding entries with an inverted comma ('). This prevents the programme from altering the format automatically.
+For the deployment table, create a csv file with (at least) three columns named exactly "station"", "start"" and "stop". **station** should contain station identifiers that will match with those used during tagging. **start** and **stop** should contain text date/time values in a consistent format, preferably *yyyy:mm:dd HH:MM:SS*. This is the usual format for image metadata, and later processing functions expect this by default, although you can specify a different format if you have to. Fig. 1 shows an example deployment dataframe. Note that if you use Excel to create the csv file for this, it's strongly recommended to force text format on the date/time values by preceding entries with an inverted comma ('). This prevents the programme from altering the format automatically.
 
 ```{r echo=FALSE, fig.cap="Fig. 1. Example deployment data showing the necessary columns and their format. Note that station 10 had three camera deployments at different times, so takes three rows."}
 depdat[8:14,]
@@ -65,18 +64,18 @@ You will need functions from package `camtools`, available from [link](github.co
 source("camtools_1_0.R")
 ```
 
-First, extract the tag and time/date information from the image metadata using function `extract.tags`. This returns a dataframe with a column for each tag field, by default with source file and creation time/date columns added by default, plus column **time** which extracts time of day from the time/date values and expresses it in radians.
+First, extract the tag and time/date information from the image metadata using function `extract.tags`. This returns a dataframe with a column for each tag field, by default with source file, creation time/date and original tag string columns added by default, plus an additional column, **time**, which extracts time of day from the time/date values and expresses it in radians.
 
 ```{r eval=FALSE}
 tagdat <- extract.tags(exifdat)
 tagdat <- plyr::rename(tagdat, c(CreateDate="date", placeID="station"))
 ```
 
-```{r}
+```{r echo=FALSE}
 head(tagdat[,c(2,4,5,6,8,9)])
 ```
 
-Next, take a subset that includes just the first contact records (these are the ones that we need to tally to generate trape rates), and check that all records sit within the deployment times given in the deployment table. First subsetting:
+Next, take a subset that includes just the first contact records (these are the ones that we need to tally to generate trape rates), and check that all records sit within the deployment times given in the deployment table. First subsetting contacts:
 
 ```{r}
 contactdat <- subset(tagdat, contact==1)
@@ -123,7 +122,7 @@ The analysis then has four steps:
 
 ### Activity level estimation
 
-You will need function `fitact` from R package `activity`, applying this to radian time of day data for contact records of your species of interest. The function fits a circular kernel model to the data, and provides an estimate of activity level (see Rowcliffe et al. 2014 MEE 5: 1170-1179). By default, the model is fitted without bootstrapping and no standard errors are provided for the activity level estimate. To obtain a standard error, set the `sample` argument to either "data" or "model". This can be slow, so in the example below, the number of boostrap replicates is reduced using the `reps` argument. If you wish to consider only records from part of the diel cycle, provide a two-element vector to the `bounds` argument, specifying the beginning and end of the the period you wish to consider. The result is an object of class `actmod`, which can be plotted to examine model fit, and has slot `act` containing the activity level estimate.
+You will need function `fitact` from R package `activity` (available on [CRAN](https://cran.r-project.org/)), applying this to radian time of day data for contact records of your species of interest. The function fits a circular kernel model to the data, and provides an estimate of activity level (see Rowcliffe et al. 2014 MEE 5: 1170-1179). By default, the model is fitted without bootstrapping and no standard errors are provided for the activity level estimate. To obtain a standard error, set the `sample` argument to either "data" or "model". This can be slow, so in the example below, the number of boostrap replicates is reduced using the `reps` argument. If you wish to consider only records from part of the diel cycle, provide a two-element vector to the `bounds` argument, specifying the beginning and end of the the period you wish to consider. The result is an object of class `actmod`, which can be plotted to examine model fit, and has slot `act` containing the activity level estimate.
 
 ```{r}
 library(activity)
@@ -137,39 +136,70 @@ plot(actmod)
 
 ### Speed estimation
 
-source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/sbd/sbd_1_0.r")
-#Get sbd_1_0.r from github.com/MarcusRowcliffe/sbd
-spdat <- subset(seqdat, species==sp & speed>0.001 & speed<10)
-(spdest <- hmean(spdat$speed))
+You will need function `hmean` from package `sbd` (available on [Github](https://github.com/MarcusRowcliffe/sbd)) in order to calculate the harmonic mean of speed observations and it's standard error. This approach is required because faster speeds are more likely to be observed than slower speeds, and the harmonic mean appropriately down-weights the influence of faster speeds on the average (see Rowcliffe et al. RSEC 2016 2: 84-94).
 
+```{r echo=FALSE}
+source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/sbd/sbd_1_0.r")
+```
+```{r evel=FALSE}
+source("sbd_1_0.r")
+```
+
+Before calculating the mean, it is desirable to inspect the distribution of observations. Typically there may be a few extremely slow speed observations (less than about 0.001 m s^-1^) that might reflect errors in sequence definition, or sequences in which the animal essentially didn't move, and probably shouldn't therefore be included in the data. There may also be unrealistically fast speeds because of errors in the calculation process. Inspecting the distribution will help to show the extent of these problems (Fig. 3). 
+
+```{r}
+hist(subset(seqdat, species==sp )$speed)
+```
+
+Re-inspecting the image sequences of extreme observations may help to identify errors so that they can be either corrected or excluded. Here, to simplify the demonstration, extreme observations are simply excluded before estimating average speed. The result is a named vector of estimated harmonic mean speed and it's standard error.
+
+```{r}
+spdat <- subset(seqdat, species==sp & speed>0.001 & speed<10)
+(spdest <- hmean( subset(seqdat, species==sp & speed>0.001 & speed<10)))
+```
 
 ### Detection zone estimation
 
-source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/distanceDF/distancedf.r")
-#Get ditancedf.r from github.com/MarcusRowcliffe/distanceDF
+You will need function `fitdf` from package `distanceDF` (available on [Github](https://github.com/MarcusRowcliffe/distanceDF)) in order to fit detection functions to radial and angular distances at first contact, and so estimate effective detection zone dimensions (see Rowcliffe et al. MEE 2011 2: 464-476).
 
+```{r echo=FALSE}
+source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/distanceDF/distancedf.r")
+```
+```{r evel=FALSE}
+source("distancedf.r")
+```
+
+The first argunment is a formula indicating the column containing distance data  on the left, and covariate columns on the right (or 1 if there are none). The second argument is used to name a dataframe containing the required data. Within the `fitdf` function, models are fitted using the the `ds` function from the package `Distance`, and additional arguments to `fitdf` are passed to `ds`. Full option details can be found in the `Distance` documentation. For radial distance, a point transect is required. Typically a hazard rate model is appropriate (`key=hr`), and flexibility adjustment terms are un-necessary (order=0) (Rowcliffe et al. 2011), so for simplicity here we fit a single model with these characteristics. The result is a named list with elements **ddf** (a detection function model object as described in `Distance` documentation), and **edd** (a list holding estimates of the effective detection distance and its precision). Model fit can be inspected by plotting the ddf component of the result. If extreme values are detected, as in standard distance sampling, they could be removed by using the truncate argument to define the maximum distance to include in the analysis.
+
+```{r}
 dzdat <- subset(posdat, frame_count==1 & species==sp)
-dzdat$angle <- abs(dzdat$angle)
-hist(dzdat$radius)
-radmod <- fitdf(radius~1, dzdat, key="hr", transect="point", order=0)
+radmod <- fitdf(radius~1, dzdat, transect="point", key="hr", order=0)
 plot(radmod$ddf, pdf=TRUE)
 radmod$edd
+```
 
+Angle estimation proceeds in more or less the same way, but with a line-type transect and half-normal detection function (both default options). Angle observations left of the centre of the camera's field of view are registered as negative values, which can't be modelled as detection functions. It is therefore necessary to convert angles to absolute values before analysis.
+
+```{r}
+dzdat$angle <- abs(dzdat$angle)
 angmod <- fitdf(angle~1, dzdat, order=0)
 plot(angmod$ddf)
 angmod$edd
+```
 
 ### Density estimation
 
+You will need function `bootTRD` from package `camtools` (see above) in order to estimate density (see Rowcliffe et al. J App Ecol 2008 45: 1228-1236). This takes arguments for the number of records per station, the amount of effort (camera time per station), and additional parameters needed for the estimated, which were estimated in the earlier steps: speed (while active), activity level, detection radius detection. Parameters and their standard errors must be provided as named lists, using names v (speed while active), p (activity level), r (detection zone radius) and theta (detection zone angle). It is also crucial to ensure that units are harmonised across parameters. In this case, camera time is measured in days, but the speed time unit is seconds, while the activity level estimate was truncated to only 14 hours of the day. To convert speed to distance covered per day we therfore multiply by 14*60^2. Distance units for both speed and radius are both m, so could be left un-transformed, but we would like our density estimate expressed per km^2^, so divide both values by 1000. Finally, the angle detectection function was one-sided, with observations from both sides of the field of view centre being analysed as if they came from one side. We therefore need to mutiply angle by 2.
+
+```{r}
 param <- list(v = spdest["mean"] * 14*60^2 / 1000,
               p = actmod@act["act"],
               r = radmod$edd$estimate / 1000,
-              theta = angmod$edd$estimate * 2,
-              g=1)
-paramse <- list(v = spdest["se"] * 24*60^2 / 1000,
+              theta = angmod$edd$estimate * 2)
+paramse <- list(v = spdest["se"] * 14*60^2 / 1000,
                 p = actmod@act["se"],
                 r = radmod$edd$se / 1000,
-                theta = angmod$edd$se * 2,
-                g=0)
-bootTRD(trdat$Fox, trdat$effort.days, param, paramse)
+                theta = angmod$edd$se * 2)
+bootTRD(trdat[, sp], trdat$effort.days, param, paramse)
+```
 
