@@ -1,0 +1,175 @@
+---
+title: "REM analysis"
+author: "Marcus Rowcliffe"
+date: "3 July 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preparing data
+
+Four dataframes are needed:
+
+1. Metadata extracted from tagged images
+
+2. Animal position data generated using tracking function `predict.pos` from package `CTtracking`
+
+3. Animal speed data generated using tracking function `seq.summary` from package `CTtracking`
+
+4. A deployment table, indicating the site and start and end date/times of each camera deployment.
+
+Assuming you've already created and saved the first three, they can be read in, for example:
+
+```{r}
+path <- "D:/Survey_xxx"
+exifdat <- read.csv(file.path(path, "exifdata.csv"), stringsAsFactors = FALSE)
+posdat <- read.csv(file.path(path, "posdat.csv"), stringsAsFactors = FALSE)
+seqdat <- read.csv(file.path(path, "seqdat.csv"), stringsAsFactors = FALSE)
+```
+
+
+```{r echo=FALSE}
+#Setting things up
+source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/camtools/camtools_1_0.R")
+
+tagdat <- extract.tags(exifdat)
+tagdat <- plyr::rename(tagdat, c(CreateDate="date", placeID="station"))
+i <- is.na(tagdat$station)
+tagdat[i,"station"] <- basename(dirname(tagdat$SourceFile))[i]
+dt <- as.POSIXct(tagdat$date, format="%Y:%m:%d %H:%M:%S", tz="UTC")
+trange <- with(tagdat, tapply(dt, station, range))
+orgn <- as.POSIXct("1970:01:01 00:00:00", format="%Y:%m:%d %H:%M:%S", tz="UTC")
+stt <- as.character(as.POSIXct(unlist(lapply(trange, function(x) x[1]))-36000, tz="UTC",origin=orgn), format="%Y:%m:%d %H:%M:%S", tz="UTC")
+stp <- as.character(as.POSIXct(unlist(lapply(trange, function(x) x[2]))+36000, tz="UTC",origin=orgn), format="%Y:%m:%d %H:%M:%S", tz="UTC")
+stn <- sort(unique(tagdat$station))
+depdat <- data.frame(station=stn, start=stt, stop=stp, stringsAsFactors = FALSE)
+depdat$station <- substr(depdat$station, 1, 2)
+tagdat$station <- substr(tagdat$station, 1, 2)
+rownames(depdat) <- NULL
+```
+
+For the deployment table, create a csv file with three columns named exactly "station"", "start"" and "stop". **station** should contain station identifiers that will match with those used during tagging. **start** and **stop** should contain text date/time values in a consistent format, preferably *yyyy:mm:dd HH:MM:SS*. This is the usual format for image metadata, and later processing functions expect this by default, although you can specify a different format if you have to. Fig. 1 shows an example deployment dataframe. Note that if you use Excel to create the csv file for this, it's strongly recommended to force text format on the date/time values by preceding entries with an inverted comma ('). This prevents the programme from altering the format automatically.
+
+```{r echo=FALSE, fig.cap="Fig. 1. Example deployment data showing the necessary columns and their format. Note that station 10 had three camera deployments at different times, so takes three rows."}
+depdat[8:14,]
+```
+
+##Generating and checking trap rate data
+
+You will need functions from package `camtools`, available from [link](github.com/MarcusRowcliffe/camtools)
+
+```{r eval=FALSE}
+source("camtools_1_0.R")
+```
+
+First, extract the tag and time/date information from the image metadata using function `extract.tags`. This returns a dataframe with a column for each tag field, by default with source file and creation time/date columns added by default, plus column **time** which extracts time of day from the time/date values and expresses it in radians.
+
+```{r eval=FALSE}
+tagdat <- extract.tags(exifdat)
+tagdat <- plyr::rename(tagdat, c(CreateDate="date", placeID="station"))
+```
+
+```{r}
+head(tagdat[,c(2,4,5,6,8,9)])
+```
+
+Next, take a subset that includes just the first contact records (these are the ones that we need to tally to generate trape rates), and check that all records sit within the deployment times given in the deployment table. First subsetting:
+
+```{r}
+contactdat <- subset(tagdat, contact==1)
+```
+
+Then a visual check using `plot.deployments` (Fig. 2). Obviously erroneous data will show up in this plot as red points that do not sit over a deployment period for their site. All looks OK in this case.
+
+```{r fig.cap="Fig. 2. A plot of camera deployment and animal record times for each station. Black lines indicate deployments while red points indicate animal records."}
+plot.deployments(contactdat, depdat)
+```
+
+You can also separate the rows of data that do or do not sit within their deployment times using `chekc.dates`, which produces a list of two dataframes: `good.data` and `bad.data`, respectively holding the records that do and do not sit within their deployments.
+
+```{r eval=F}
+chk <- check.dates(contactdat, depdat)
+chk$bad.data
+```
+
+Finally, create a dataframe of trap rate data using `event.count`. This requires as input your `contactdat` dataframe and your `depdat` dataframe, and produces a new dataframe with a row per station, and data columns for station identifier, effort in days, and record counts for each species in the database:
+
+```{r}
+trdat <- event.count(contactdat, depdat)
+head(trdat)
+
+```
+
+##REM analysis
+
+If you're working with a multi-species dataset, first create an indicator with which you can select relevant records from the various dataframes:
+
+```{r}
+sp <- "Fox"
+```
+
+The analysis then has four steps:
+
+1. activity level estimation
+
+2. speed estimation
+
+3. detection zone estimation
+
+4. density estimation
+
+### Activity level estimation
+
+You will need function `fitact` from R package `activity`, applying this to radian time of day data for contact records of your species of interest. The function fits a circular kernel model to the data, and provides an estimate of activity level (see Rowcliffe et al. 2014 MEE 5: 1170-1179). By default, the model is fitted without bootstrapping and no standard errors are provided for the activity level estimate. To obtain a standard error, set the `sample` argument to either "data" or "model". This can be slow, so in the example below, the number of boostrap replicates is reduced using the `reps` argument. If you wish to consider only records from part of the diel cycle, provide a two-element vector to the `bounds` argument, specifying the beginning and end of the the period you wish to consider. The result is an object of class `actmod`, which can be plotted to examine model fit, and has slot `act` containing the activity level estimate.
+
+```{r}
+library(activity)
+actmod <- fitact(subset(contactdat, species==sp)$time, 
+                 bounds=c(18,8)*pi/12,
+                 sample="data",
+                 reps=100)
+actmod@act
+plot(actmod)
+```
+
+### Speed estimation
+
+source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/sbd/sbd_1_0.r")
+#Get sbd_1_0.r from github.com/MarcusRowcliffe/sbd
+spdat <- subset(seqdat, species==sp & speed>0.001 & speed<10)
+(spdest <- hmean(spdat$speed))
+
+
+### Detection zone estimation
+
+source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/distanceDF/distancedf.r")
+#Get ditancedf.r from github.com/MarcusRowcliffe/distanceDF
+
+dzdat <- subset(posdat, frame_count==1 & species==sp)
+dzdat$angle <- abs(dzdat$angle)
+hist(dzdat$radius)
+radmod <- fitdf(radius~1, dzdat, key="hr", transect="point", order=0)
+plot(radmod$ddf, pdf=TRUE)
+radmod$edd
+
+angmod <- fitdf(angle~1, dzdat, order=0)
+plot(angmod$ddf)
+angmod$edd
+
+### Density estimation
+
+param <- list(v = spdest["mean"] * 14*60^2 / 1000,
+              p = actmod@act["act"],
+              r = radmod$edd$estimate / 1000,
+              theta = angmod$edd$estimate * 2,
+              g=1)
+paramse <- list(v = spdest["se"] * 24*60^2 / 1000,
+                p = actmod@act["se"],
+                r = radmod$edd$se / 1000,
+                theta = angmod$edd$se * 2,
+                g=0)
+bootTRD(trdat$Fox, trdat$effort.days, param, paramse)
+
