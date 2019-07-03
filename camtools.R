@@ -3,11 +3,56 @@ library(readxl) #for read_xls and read_xlsx, used in read.multi
 
 #READING DATA#############################################
 
+#decimal.time#
+
+#Converts text time data to decimal time of day. Default format hh:mm:ss, but can handle 
+#other separators and minutes and seconds can be missing.
+
+#INPUT
+# dat: an array of character times, with hours, minutes and seconds in that order separated by sep.
+# sep: the character used to separate time components.
+
+#OUTPUT
+# An array of decimal times in hours.
+
+decimal.time <- function(dat, sep=":"){
+  dat <- as.character(dat)
+  f <- function(x){
+    res <- as.numeric(x[1])
+    if(length(x)>1) res <- res+as.numeric(x[2])/60
+    if(length(x)>2) res <- res+as.numeric(x[3])/60^2
+    res/24
+  }
+  spaces <- unique(grepl(" " , dat))
+  if(length(spaces)!=1) stop("Time formats don't seem to be consistent")
+  if(spaces) dat <- unlist(lapply(strsplit(dat, " "), function(x) x[2]))
+  tt <- strsplit(as.character(dat), sep)
+  unlist(lapply(tt, f))
+}
+
 #extract.tags#
 
-#Extracts and separates tags from image metadata. Where contacts are flagged and
-#species labelled, expects the column headings "contact" and "species" to be used.
-#Where multiple species or individuals per image are tagged
+#Extracts and separates tags from image metadata. When contacts are flagged and/or
+#species labelled, expects the respective column headings "contact" and "species" 
+#to be used. Where multiple species or individuals per image are tagged, these 
+#headings should be suffixed with integers indicating the ith contact (eg contact2
+#and species2 for the second species contact in an image).
+
+#INPUT
+
+#dat: dataframe of image metadata containing tags
+#fieldsep: character(s) used to separate fields in the tags
+#headsep: character(s) used to separate headings from values within fields
+#tagcol: name of the column in dat containing the tags
+#exifcols: names of other columns in dat to retain in the output
+
+#OUTPUT
+
+#A dataframe of tag data separated into columns, with any additional columns 
+#specified by exifcols. When CreateDate is included in exifcols, an additional 
+#radian time of day column is added. When more than one animal is recorded per 
+#image, second and further records are appended as additional rows.
+
 extract.tags <- function(dat, fieldsep=", ", headsep=": ", tagcol="Keywords",
                          exifcols=c("SourceFile", "CreateDate", tagcol)){
   f1 <- function(x,i)
@@ -22,7 +67,12 @@ extract.tags <- function(dat, fieldsep=", ", headsep=": ", tagcol="Keywords",
                      head = unlist(lapply(datlist2, f2, i=1)),
                      val = unlist(lapply(datlist2, f2, i=2)))
   dat3 <- reshape::cast(dat2, row~head, value="val")
-  dat4 <- cbind(dat[, exifcols], dat3[, -1])
+  edat <- dat[, exifcols]
+  if("CreateDate" %in% exifcols){
+    times <- unlist(lapply(strsplit(edat$CreateDate, " "), function(x) x[2]))
+    edat$time <- decimal.time(times)*2*pi
+  }
+  dat4 <- cbind(edat, dat3[, -1])
   dat5 <- dat4
   nsp <- sum(grepl("species", names(dat4)))
   if(nsp>1){
@@ -82,7 +132,7 @@ read.multi <- function(dir, type=c(".csv", ".txt", ".xls", ".xlsx"),
   rbindlist(dat, fill=TRUE, idcol=idcol)
 }
 
-error.check <- function(obsdat, depdat=NULL){
+error.check <- function(obsdat, tz, format, depdat=NULL){
   msgs1 <- c("obsdat must contain columns station, species and date",
              "depdat must contain columns station, start and stop")
   msgs2 <- c("Some dates in obsdat are missing or not convertible to POSIXct",
@@ -116,8 +166,8 @@ error.check <- function(obsdat, depdat=NULL){
   }
 }
 
-check.dates <- function(obsdat, depdat){
-  error.check(obsdat, depdat)
+check.dates <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
+  error.check(obsdat, tz, format, depdat)
   
   obsstn <- as.character(obsdat$station)
   depstn <- as.character(depdat$station)
@@ -141,10 +191,16 @@ check.dates <- function(obsdat, depdat){
 # obsdat: dataframe of camera observations, one row per image data; must include columns:
 #    station: character camera station identifier
 #    date: character or POSIX date-times of observations; converted using as.POSIXct
+# depdat: dataframe of deployment start and stop times; must include columns:
+#    station: character camera station identifier
+#    start, stop: character start and stop date-times in the format indicated by the format argument
+#                 *TIP*: to avoid date-time formats being fouled up by Excel:
+#                        1. avoid opening existing files in Excel;
+#                        2. if creating a new file in Excel, prefix with dates with ' to format as text.
 # format: format for date conversion passed to as.POSIXct
 # tz: time zone for date conversion, passed to as.POSIXct
-plot.deployments <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
-  error.check(obsdat, depdat)
+plot.deployments <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
+  error.check(obsdat, tz, format, depdat)
   
   obsdat$station <- as.character(obsdat$station)
   depdat$station <- as.character(depdat$station)
@@ -187,7 +243,7 @@ plot.deployments <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC
 #OUTPUT
 # A dataframe with the same columns as the input obsdat but (potentially) fewer rows
 thin.events <- function(obsdat, interval, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
-  error.check(obsdat)
+  error.check(obsdat, tz, format)
   
   sp.stn <- paste(obsdat$species, obsdat$station, sep=".")
   date <- as.POSIXct(obsdat$date, format=format, tz=tz)
@@ -218,14 +274,16 @@ thin.events <- function(obsdat, interval, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 
 #INPUT
 # obsdat: a row per event dataframe of the kind created using get.eventdat; must have (at least) columns:
-#     station: station identifiers
-#     species: species identifiers
-# stations: a vector of identifiers for all the stations in the survey
+#    station: station identifiers
+#    species: species identifiers
+# depdat: dataframe of deployment start and stop times; must include columns:
+#    station: character camera station identifier
+#    start, stop: character start and stop date-times in the format indicated by the format argument
 
 #OUTPUT
 # A stations by species matrix of observation counts
-event.count <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
-  error.check(obsdat, depdat)
+event.count <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
+  error.check(obsdat, tz, format, depdat)
 
   checked.obs <- check.dates(obsdat, depdat)
   obsdat <- checked.obs$good.data
@@ -270,7 +328,7 @@ event.count <- function(obsdat, depdat, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
 # detection: detection matrix
 # effort: effort matrix (in days)
 # cuts: cut times of occasions
-get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="%Y-%m-%d %H:%M:%S", tz="UTC"){
+get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 
   get.effort <- function(stn){
     s <- depdat$station==stn
@@ -290,7 +348,7 @@ get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="
     res
   }
   
-  error.check(obsdat, depdat)
+  error.check(obsdat, tz, format, depdat)
   checked.obs <- check.dates(obsdat, depdat)
   obsdat <- checked.obs$good.data
   duffdf <- checked.obs$bad.data
