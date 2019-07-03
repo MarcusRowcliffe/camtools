@@ -83,11 +83,10 @@ spdat <- subset(seqdat, species==sp & speed>0.001 & speed<10)
 param <- list(v = spdest["mean"] * 14*60^2 / 1000,
               p = actmod@act["act"],
               r = radmod$edd$estimate / 1000,
-              theta = angmod$edd$estimate * 2,
-              g=1)
+              theta = angmod$edd$estimate * 2)
 paramse <- list(v = spdest["se"] * 24*60^2 / 1000,
                 p = actmod@act["se"],
                 r = radmod$edd$se / 1000,
-                theta = angmod$edd$se * 2,
-                g=0)
+                theta = angmod$edd$se * 2)
 bootTRD(trdat$Fox, trdat$effort.days, param, paramse)
+
