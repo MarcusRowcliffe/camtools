@@ -31,6 +31,11 @@ rownames(depdat) <- NULL
 View(depdat)
 depdat[8:14,]
 head(tagdat[,c(2,4,5,6,8,9)])
+write.csv(depdat, file.path(path, "depdat.csv"), row.names = FALSE)
+q <- read.csv(file.path(path, "depdat.csv"), stringsAsFactors = FALSE,
+              colClasses = "character")
+q$station
+
 
 #Visual check and create trap rate data
 par(mfrow=c(1,1))
@@ -84,7 +89,7 @@ param <- list(v = spdest["mean"] * 14*60^2 / 1000,
               p = actmod@act["act"],
               r = radmod$edd$estimate / 1000,
               theta = angmod$edd$estimate * 2)
-paramse <- list(v = spdest["se"] * 24*60^2 / 1000,
+paramse <- list(v = spdest["se"] * 14*60^2 / 1000,
                 p = actmod@act["se"],
                 r = radmod$edd$se / 1000,
                 theta = angmod$edd$se * 2)
