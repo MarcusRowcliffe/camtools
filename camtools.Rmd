@@ -38,7 +38,7 @@ Note that station 10 had three camera deployments at different times, so takes t
 
 ##Generating and checking trap rate data
 
-You will need functions from package `camtools`, available on [Github](github.com/MarcusRowcliffe/camtools).
+You will need functions from package `camtools`, available at [github.com/MarcusRowcliffe/camtools](https://github.com/MarcusRowcliffe/camtools).
 
 ```{r eval=FALSE}
 source("camtools_1_0.R")
@@ -112,7 +112,7 @@ sp <- "Fox"
 
 ### Activity level estimation
 
-You will need function `fitact` from R package `activity` (available on [CRAN](https://cran.r-project.org/)), applying this to radian time of day data for contact records of your species of interest. The function fits a circular kernel model to the data, and provides an estimate of activity level (see Rowcliffe et al. 2014 MEE 5: 1170-1179). By default, the model is fitted without bootstrapping and no standard errors are provided for the activity level estimate. To obtain a standard error, set the `sample` argument to either "data" or "model". This can be slow, so in the example below, the number of boostrap replicates is reduced using the `reps` argument. If you need to consider only records from part of the diel cycle, provide a two-element vector to the `bounds` argument, specifying the beginning and end of the the period you wish to consider. The result is an object of class `actmod`, which can be plotted to examine model fit (Fig. 2), and has slot `act` containing the activity level estimate.
+You will need function `fitact` from R package `activity` (available at [cran.r-project.org](https://cran.r-project.org/)), applying this to radian time of day data for contact records of your species of interest. The function fits a circular kernel model to the data, and provides an estimate of activity level (see Rowcliffe et al. 2014 MEE 5: 1170-1179). By default, the model is fitted without bootstrapping and no standard errors are provided for the activity level estimate. To obtain a standard error, set the `sample` argument to either "data" or "model". This can be slow, so in the example below, the number of boostrap replicates is reduced using the `reps` argument. If you need to consider only records from part of the diel cycle, provide a two-element vector to the `bounds` argument, specifying the beginning and end of the the period you wish to consider. The result is an object of class `actmod`, which can be plotted to examine model fit (Fig. 2), and has slot `act` containing the activity level estimate.
 
 ```{r message=FALSE, warning=FALSE, fig.cap="Fig. 2 An activity pattern from camera trap data, showing the data distribution and fitted circular kernel model, truncated to consider only nocturnal images"}
 library(activity)
@@ -126,7 +126,7 @@ plot(actmod, centre="night", dline=list(col="grey"))
 
 ### Speed estimation
 
-You will need function `hmean` from package `sbd` (available on [Github](https://github.com/MarcusRowcliffe/sbd)) in order to calculate the harmonic mean of speed observations and it's standard error. This approach is required because faster speeds are more likely to be observed than slower speeds, and the harmonic mean appropriately down-weights the influence of faster speeds on the average (see Rowcliffe et al. RSEC 2016 2: 84-94).
+You will need function `hmean` from package `sbd` (available on [github.com/MarcusRowcliffe/sbd](https://github.com/MarcusRowcliffe/sbd)) in order to calculate the harmonic mean of speed observations and it's standard error. This approach is required because faster speeds are more likely to be observed than slower speeds, and the harmonic mean appropriately down-weights the influence of faster speeds on the average (see Rowcliffe et al. RSEC 2016 2: 84-94).
 
 ```{r echo=FALSE, message=FALSE}
 source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/sbd/sbd_1_0.r")
@@ -152,7 +152,7 @@ speeds <- subset(seqdat, species==sp & speed>0.001 & speed<10)$speed
 
 ### Detection zone estimation
 
-You will need function `fitdf` from package `distanceDF` (available on [Github](https://github.com/MarcusRowcliffe/distanceDF)) in order to fit detection functions to radial and angular distances at first contact, and so estimate effective detection zone dimensions (see Rowcliffe et al. MEE 2011 2: 464-476).
+You will need function `fitdf` from package `distanceDF` (available on [github.com/MarcusRowcliffe/distanceDF](https://github.com/MarcusRowcliffe/distanceDF)) in order to fit detection functions to radial and angular distances at first contact, and so estimate effective detection zone dimensions (see Rowcliffe et al. MEE 2011 2: 464-476).
 
 ```{r echo=FALSE, message=FALSE}
 source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/distanceDF/distancedf.r")
