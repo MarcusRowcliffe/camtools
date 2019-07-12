@@ -42,7 +42,8 @@ defactor <- function(dat){
 
 decimal.time <- function(dat, sep=":"){
   dat <- as.character(dat)
-  f <- function(x){
+  f1 <- function(x, i) x[i]
+  f2 <- function(x){
     res <- as.numeric(x[1])
     if(length(x)>1) res <- res+as.numeric(x[2])/60
     if(length(x)>2) res <- res+as.numeric(x[3])/60^2
@@ -50,9 +51,9 @@ decimal.time <- function(dat, sep=":"){
   }
   spaces <- unique(grepl(" " , dat))
   if(length(spaces)!=1) stop("Time formats don't seem to be consistent")
-  if(spaces) dat <- unlist(lapply(strsplit(dat, " "), function(x) x[2]))
+  if(spaces) dat <- unlist(lapply(strsplit(dat, " "), f1, 2))
   tt <- strsplit(as.character(dat), sep)
-  unlist(lapply(tt, f))
+  unlist(lapply(tt, f2))
 }
 
 #extract.tags#
@@ -85,33 +86,59 @@ extract.tags <- function(dat, fieldsep=", ", headsep=": ", tagcol="Keywords",
       if(length(x)==1) 1 else x[i]
   f2 <- function(x, i) lapply(x, f1, i=i)
   
-  dat1 <- dat[, tagcol]
+  tag.error.check <- function(){
+    combis <- table(dat2$row, dat2$head)
+    duff <- as.vector(which(combis>1, TRUE)[,"row"])
+    
+    if(length(duff)>0)
+      dat2[dat2$row %in% duff, "head"] <- 1:sum(dat2$row %in% duff)
+    dat3 <- reshape::cast(dat2, row~head, value="val")
+    dat3 <- defactor(dat3)
+    nms <- names(dat3)
+    cnms <- nms[grep("contact", nms)]
+    n <- substr(cnms, nchar(cnms), nchar(cnms))
+    for(i in n){
+      ci <- paste0("contact", i)
+      si <- paste0("species", i)
+      if(si %in% names(dat3)){
+        duff <- c(duff, which(!is.na(dat3[,ci]) & is.na(dat3[,si])))
+      } else
+        duff <- c(duff, which(!is.na(dat3[,ci])))
+    }
+    if(length(duff)>0)
+      stop(paste("Tagging errors found in row(s):", 
+               paste(sort(duff), collapse=" "))) else
+                 dat3
+  }
+
+  dat1 <- as.character(dat[, tagcol])
+  dat1[which(dat1=="")] <- "NoTags"
   datlist1 <- strsplit(dat1, fieldsep)
   datlist2 <- lapply(datlist1, strsplit, headsep)
   dat2 <- data.frame(row = rep(1:length(datlist2), lapply(datlist2, length)),
                      head = unlist(lapply(datlist2, f2, i=1)),
-                     val = unlist(lapply(datlist2, f2, i=2)))
-  dat3 <- reshape::cast(dat2, row~head, value="val")
-  dat3 <- defactor(dat3)
+                     val = unlist(lapply(datlist2, f2, i=2)),
+                     stringsAsFactors = FALSE)
+  dat3 <- tag.error.check()
   edat <- dat[, exifcols]
   if("CreateDate" %in% exifcols){
-    times <- unlist(lapply(strsplit(edat$CreateDate, " "), function(x) x[2]))
+    cd <- as.character(edat$CreateDate)
+    times <- unlist(lapply(strsplit(cd, " "), function(x) x[2]))
     edat$time <- decimal.time(times)*2*pi
+    nas <- which(is.na(edat$time))
+    if(length(nas)>0) 
+      warning(paste("CreateDate format was not recognisable in row(s):",
+                    paste(nas, collapse=" ")))
   }
   dat4 <- cbind(edat, dat3[, -1])
   dat5 <- dat4
-  nsp <- sum(grepl("species", names(dat4)))
-  if(nsp>1){
-    for(sp in 2:nsp){
-      hd <- c(paste0("contact", sp), paste0("species", sp))
-      dat4[, c("contact1", "species1")] <- dat4[, hd]
-      dat5 <- rbind(dat5, subset(dat4, !is.na(species1)))
-      dat4 <- dat4[, !names(dat4) %in% hd]
-      dat5 <- dat5[, !names(dat5) %in% hd]
-    }
+  spcols <- names(dat4)[grepl("species", names(dat4))]
+  if(length(spcols)>1){
+    for(sp in spcols[-1])
+      dat5 <- rbind(dat5, subset(dat4, !is.na(dat4[,sp])))
   }
-  names(dat5)[grepl("species", names(dat5))] <- "species"
-  names(dat5)[grepl("contact", names(dat5))] <- "contact"
+  dat5 <- dat5[, !names(dat5) %in% c(spcols[-1], sub("species", "contact", spcols[-1]))]
+  names(dat5)[pmatch(c("contact","species"), names(dat5))] <- c("contact","species")
   dat5
 }
 
