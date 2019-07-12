@@ -95,17 +95,4 @@ paramse <- list(v = spdest["se"] * 14*60^2 / 1000,
                 theta = angmod$edd$se * 2)
 bootTRD(trdat$Fox, trdat$effort.days, param, paramse)
 
-<<<<<<< HEAD
 
-
-
-#############################
-#Christel19
-edat <- read.csv("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/camtools/Christel19/exifdata.csv",
-                 stringsAsFactors = F)
-edat <- edat[-c(7099,7101,91,4709,6227),]
-adat <- extract.tags(edat)
-View(adat)
-=======
-install.packages(c("rmarkdown", "tinytex"))
->>>>>>> 13a77a773ff0a35bc4537469ba95b66981433a17
