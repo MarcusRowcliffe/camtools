@@ -1,8 +1,8 @@
 #Get camtools_1_0.R from github.com/MarcusRowcliffe/camtools
 #Source code for manipulating and analysing trap rate data
-source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/camtools/camtools_1_0.R")
+source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/camtools/camtools_1_1.R")
 
-path <- "D:/Survey_xxx"
+path <- "C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/camtools/Christel19"
 exifdat <- read.csv(file.path(path, "exifdata.csv"), stringsAsFactors = FALSE)
 posdat <- read.csv(file.path(path, "posdat.csv"), stringsAsFactors = FALSE)
 seqdat <- read.csv(file.path(path, "seqdat.csv"), stringsAsFactors = FALSE)
@@ -10,32 +10,18 @@ seqdat <- read.csv(file.path(path, "seqdat.csv"), stringsAsFactors = FALSE)
 
 
 tagdat <- extract.tags(exifdat)
-tagdat <- plyr::rename(tagdat, c(CreateDate="date", placeID="station"))
+tagdat <- plyr::rename(tagdat, c(CreateDate="date", placeID="deployment"))
 View(tagdat)
 str(tagdat)
+unique(tagdat$deployment)
 
 #Some tidying up / temporary fixes
-i <- is.na(tagdat$station)
-tagdat[i,"station"] <- basename(dirname(tagdat$SourceFile))[i] #infer missing station IDs
-#create deployment data
-dt <- as.POSIXct(tagdat$date, format="%Y:%m:%d %H:%M:%S", tz="UTC")
-trange <- with(tagdat, tapply(dt, station, range))
-orgn <- as.POSIXct("1970:01:01 00:00:00", format="%Y:%m:%d %H:%M:%S", tz="UTC")
-stt <- as.character(as.POSIXct(unlist(lapply(trange, function(x) x[1]))-36000, tz="UTC",origin=orgn), format="%Y:%m:%d %H:%M:%S", tz="UTC")
-stp <- as.character(as.POSIXct(unlist(lapply(trange, function(x) x[2]))+36000, tz="UTC",origin=orgn), format="%Y:%m:%d %H:%M:%S", tz="UTC")
-stn <- sort(unique(tagdat$station))
-depdat <- data.frame(station=stn, start=stt, stop=stp, stringsAsFactors = FALSE)
-depdat$station <- substr(depdat$station, 1, 2)
-tagdat$station <- substr(tagdat$station, 1, 2)
-rownames(depdat) <- NULL
-View(depdat)
-depdat[8:14,]
-head(tagdat[,c(2,4,5,6,8,9)])
-write.csv(depdat, file.path(path, "depdat.csv"), row.names = FALSE)
-q <- read.csv(file.path(path, "depdat.csv"), stringsAsFactors = FALSE,
-              colClasses = "character")
-q$station
+i <- is.na(tagdat$deployment)
+tagdat[i,"deployment"] <- basename(dirname(tagdat$SourceFile))[i] #infer missing station IDs
 
+tagdat$station <- substr(tagdat$deployment, 1, 2)
+depdat <- read.csv(file.path(path, "depdat.csv"), stringsAsFactors = FALSE,
+              colClasses = "character")
 
 #Visual check and create trap rate data
 par(mfrow=c(1,1))
