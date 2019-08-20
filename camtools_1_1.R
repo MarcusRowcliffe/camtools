@@ -530,7 +530,7 @@ bootTRD <- function(P, T, param, paramSE, strata=NULL, areas=NULL, its=1000){
   BSdens <- sapply(1:its, TRDsample, P, T, param, strata, areas)
   BSse <- sd(BSdens)
   Dens <- TRD(P,T,param,strata,areas)
-  prms <- ifelse("g" %in% names(param), 5, 4)
+  prms <- length(param)
   addn <- rep(0,prms)
   addn[which(names(param)=="theta")] <- 2
   Es <- c(Dens,addn+unlist(param))
