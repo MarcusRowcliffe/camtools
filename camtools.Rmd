@@ -41,11 +41,11 @@ Note that station 10 had three camera deployments at different times, so takes t
 You will need functions from package `camtools`, available at [github.com/MarcusRowcliffe/camtools](https://github.com/MarcusRowcliffe/camtools).
 
 ```{r eval=FALSE}
-source("camtools_1_0.R")
+source("camtools.R")
 ```
 ```{r echo=FALSE}
 #Setting things up
-source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/camtools/camtools_1_0.R")
+source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/camtools/camtools.R")
 ```
 
 First, extract the tag and time/date information from the image metadata using function `extract.tags`. This returns a dataframe with a column for each tag field, by default with source file, creation time/date and original tag string columns added, plus an additional column, **time**, which extracts time of day from the time/date values and expresses it in radians. Subsequent processing requires specific column names for particular data elements, specifically **date** for record time/date, and **station** for station identifier. These columns may therefore need to be renamed.
@@ -63,7 +63,7 @@ tagdat$station <- substr(tagdat$station, 1, 2)
 head(tagdat[,c(2,4,5,6,8,9)])
 ```
 
-Next, take a subset that includes just the first contact records (these are the ones that we need to tally to generate trape rates), and check that all records sit within the deployment times given in the deployment table. First subsetting contacts:
+Next, take a subset that includes just the first contact records (these are the ones that we need to tally to generate trap rates), and check that all records sit within the deployment times given in the deployment table. First subsetting contacts:
 
 ```{r}
 contactdat <- subset(tagdat, contact==1)
