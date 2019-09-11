@@ -82,3 +82,4 @@ paramse <- list(v = spdest["se"] * 14*60^2 / 1000,
 bootTRD(trdat$Fox, trdat$effort.days, param, paramse)
 
 
+
