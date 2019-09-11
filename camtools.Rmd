@@ -63,7 +63,7 @@ tagdat$station <- substr(tagdat$station, 1, 2)
 head(tagdat[,c(2,4,5,6,8,9)])
 ```
 
-Next, take a subset that includes just the first contact records (these are the ones that we need to tally to generate trape rates), and check that all records sit within the deployment times given in the deployment table. First subsetting contacts:
+Next, take a subset that includes just the first contact records (these are the ones that we need to tally to generate trap rates), and check that all records sit within the deployment times given in the deployment table. First subsetting contacts:
 
 ```{r}
 contactdat <- subset(tagdat, contact==1)
