@@ -449,7 +449,7 @@ get.dmatrix <- function(obsdat, depdat, interval, offset=0, order=NULL, format="
 #	v: speed of movement (either day range or speed while active)
 #	p: proportion of time active (set to 1 if v is day range)
 #	g: group size
-#	a: camera detection radius
+#	r: camera detection radius
 #	theta: camera detection arc (in radians)
 #	NB - ensure that units are consistent (i.e. distance in v and a, and time in v and T)
 #strata: a factor the same length as P defining which stratum each location is in
@@ -471,6 +471,7 @@ STRD <- function(i, P, T, param, strata){
 #Trap rate density estimator, with or without stratification
 TRD <- function(P, T, param, strata=NULL, areas=NULL){
   if(length(P)!=length(T)) stop("P and T have unequal lengths")
+  if(!all(c("v", "r", "theta") %in% names(param))) stop("param list must (at least) contain elements named v (speed), r (radius) and theta (angle)")
   if(!("g" %in% names(param))) param <- c(param,g=1)
   if(!("p" %in% names(param))) param <- c(param,p=1)
   if(is.null(strata))
@@ -527,6 +528,7 @@ nbNLL <- function(param, P, T){
 
 #Trap rate density estimate with bootstrapped confidence intervals and variance
 bootTRD <- function(P, T, param, paramSE, strata=NULL, areas=NULL, its=1000){
+  if(!all(names(paramSE) %in% names(param))) stop("Mismatched param and paramSE names")
   BSdens <- sapply(1:its, TRDsample, P, T, param, strata, areas)
   BSse <- sd(BSdens)
   Dens <- TRD(P,T,param,strata,areas)
