@@ -1,7 +1,7 @@
 ---
-title: "REM analysis"
+title: "REM analysis using camtools"
 author: "Marcus Rowcliffe"
-date: "3 July 2019"
+date: "11 March 2020"
 output:
   pdf_document: default
   html_document: default
@@ -11,41 +11,47 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+## Background
+This vignette steps through  data processing and analysis for generating random encounter model density estimates and associated parameters (trap rates, activity level, detection zone dimensions). Functions and example data are available at <https://github.com/MarcusRowcliffe/camtools>.
+
+
 ## Preparing data
 
-Four dataframes are needed:
+Four dataframes are needed for the full REM analysis:
 
-1. Metadata extracted from tagged images (`exifdat` below).
+1. Metadata extracted from tagged images (`exifdat` below). The function `read.exif` from package `CTtracking` can be used, but before using it for the first time, you need to download the exiftool executable to your computer (<https://www.sno.phy.queensu.ca/~phil/exiftool>). For windows (the function isn't currently geared up for Mac OS), rename the executable file exiftool.exe and place in a new directory named C:/Exiftool. You can then run `read.exif` with a path to the image folder as the sole argument. This may take some time to complete. To avoid having to repeat this in future sessions, save the data as a csv file for future use.
 
-2. Animal position data generated using tracking function `predict.pos` from package `CTtracking` (`posdat` below).
+```{r}
+path <- "./Data"
+```
+```{r eval=FALSE}
+source(CTtracking)
+exifdat <- read.exif(file.path(path, "CameraImages"))
+write.csv(exifdat, file.path(path, "exifdata.csv"), row.names = FALSE)
+```
+
+2. Animal position data generated using tracking function `predict.pos` from package `CTtracking` (`posdat` below) - see tools and vignette at <https://github.com/MarcusRowcliffe/CTtracking>.
+.
 
 3. Animal speed data generated using tracking function `seq.summary` from package `CTtracking` (`seqdat` below).
 
-4. A deployment table, indicating the site and start and end date/times of each camera deployment (`depdat` below). For ths table, create a csv file with (at least) three columns named exactly "station"", "start"" and "stop". **station** should contain station identifiers that will match with those used during tagging. **start** and **stop** should contain text date/time values in a consistent format, preferably *yyyy:mm:dd HH:MM:SS*. This is the usual format for image metadata, and later processing functions expect this by default, although you can specify a different format if you need to. Fig. 1 shows an example deployment dataframe. Note that all columns should be read as text format. If you use Excel to create the csv file for this, force text format on any apparently numeric station identifiers, and the date/time strings, by preceding entries with an inverted comma ('). This prevents the programme from altering the format automatically. If necessary (e.g. because apparently numeric station identifiers are used) use the `colClasses` argument to enforce the format on reading into R.
+4. A deployment table, indicating the site and start and end date/times of each camera deployment (`depdat` below). For ths table, create a csv file with (at least) three columns named exactly "station"", "start"" and "stop". **station** should contain station identifiers that will match with those used during tagging. **start** and **stop** should contain text date/time values in a consistent format, preferably *yyyy:mm:dd HH:MM:SS*. This is the usual format for image metadata, and later processing functions expect this by default, although you can specify a different format if you need to. A portion of an example deployment dataframe is shown below. Note that all columns should be read as text format, not converted to factors (`stringsAsFactors=FALSE`). Note that station 10 has three camera deployments at different times, so takes three rows in this example. Station identiers here and in the exif data tags should ideally include an alphabetic charater.
 
 ```{r}
-path <- "D:/Survey_xxx"
 exifdat <- read.csv(file.path(path, "exifdata.csv"), stringsAsFactors = FALSE)
 posdat <- read.csv(file.path(path, "posdat.csv"), stringsAsFactors = FALSE)
 seqdat <- read.csv(file.path(path, "seqdat.csv"), stringsAsFactors = FALSE)
-depdat <- read.csv(file.path(path, "depdat.csv"), stringsAsFactors = FALSE,
-                   colClasses = "character")
+depdat <- read.csv(file.path(path, "depdat.csv"), stringsAsFactors = FALSE)
 depdat[8:14,]
 ```
-
-Note that station 10 had three camera deployments at different times, so takes three rows in this example.
 
 
 ##Generating and checking trap rate data
 
 You will need functions from package `camtools`, available at [github.com/MarcusRowcliffe/camtools](https://github.com/MarcusRowcliffe/camtools).
 
-```{r eval=FALSE}
+```{r eval=TRUE}
 source("camtools.R")
-```
-```{r echo=FALSE}
-#Setting things up
-source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/camtools/camtools.R")
 ```
 
 First, extract the tag and time/date information from the image metadata using function `extract.tags`. This returns a dataframe with a column for each tag field, by default with source file, creation time/date and original tag string columns added, plus an additional column, **time**, which extracts time of day from the time/date values and expresses it in radians. Subsequent processing requires specific column names for particular data elements, specifically **date** for record time/date, and **station** for station identifier. These columns may therefore need to be renamed.
@@ -53,14 +59,7 @@ First, extract the tag and time/date information from the image metadata using f
 ```{r}
 tagdat <- extract.tags(exifdat)
 tagdat <- plyr::rename(tagdat, c(CreateDate="date", placeID="station"))
-```
-
-```{r echo=FALSE}
-#Fix some missing station IDs and display
-i <- is.na(tagdat$station)
-tagdat[i,"station"] <- basename(dirname(tagdat$SourceFile))[i]
-tagdat$station <- substr(tagdat$station, 1, 2)
-head(tagdat[,c(2,4,5,6,8,9)])
+head(tagdat)
 ```
 
 Next, take a subset that includes just the first contact records (these are the ones that we need to tally to generate trap rates), and check that all records sit within the deployment times given in the deployment table. First subsetting contacts:
@@ -71,7 +70,7 @@ contactdat <- subset(tagdat, contact==1)
 
 Then a visual check using `plot.deployments` (Fig. 1). Obviously problematic data will show up in this plot as red points that do not sit over a deployment period for their site. All looks OK in this case.
 
-```{r fig.align="center", fig.width=8, fig.height=8, fig.cap="Fig. 1. A plot of camera deployment and animal record times for each station. Black lines indicate deployments while red points indicate animal records."}
+```{r fig.align="center", fig.width=8, fig.height=8, fig.cap="A plot of camera deployment and animal record times for each station. Black lines indicate deployments while red points indicate animal records."}
 plot.deployments(contactdat, depdat)
 ```
 
@@ -114,7 +113,7 @@ sp <- "Fox"
 
 You will need function `fitact` from R package `activity` (available at [cran.r-project.org](https://cran.r-project.org/)), applying this to radian time of day data for contact records of your species of interest. The function fits a circular kernel model to the data, and provides an estimate of activity level (see Rowcliffe et al. 2014 MEE 5: 1170-1179). By default, the model is fitted without bootstrapping and no standard errors are provided for the activity level estimate. To obtain a standard error, set the `sample` argument to either "data" or "model". This can be slow, so in the example below, the number of boostrap replicates is reduced using the `reps` argument. If you need to consider only records from part of the diel cycle, provide a two-element vector to the `bounds` argument, specifying the beginning and end of the the period you wish to consider. The result is an object of class `actmod`, which can be plotted to examine model fit (Fig. 2), and has slot `act` containing the activity level estimate.
 
-```{r message=FALSE, warning=FALSE, fig.cap="Fig. 2 An activity pattern from camera trap data, showing the data distribution and fitted circular kernel model, truncated to consider only nocturnal images"}
+```{r message=FALSE, warning=FALSE, fig.cap="An activity pattern from camera trap data, showing the data distribution and fitted circular kernel model, truncated to consider only nocturnal images"}
 library(activity)
 actmod <- fitact(subset(contactdat, species==sp)$time, 
                  bounds=c(18,8)*pi/12,
@@ -129,16 +128,16 @@ plot(actmod, centre="night", dline=list(col="grey"))
 You will need function `hmean` from package `sbd` (available on [github.com/MarcusRowcliffe/sbd](https://github.com/MarcusRowcliffe/sbd)) in order to calculate the harmonic mean of speed observations and it's standard error. This approach is required because faster speeds are more likely to be observed than slower speeds, and the harmonic mean appropriately down-weights the influence of faster speeds on the average (see Rowcliffe et al. RSEC 2016 2: 84-94).
 
 ```{r echo=FALSE, message=FALSE}
-source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/sbd/sbd_1_0.r")
+source("C:/Users/rowcliffe.m/OneDrive - Zoological Society of London/GitHub/sbd/sbd.r")
 ```
 
 ```{r eval=FALSE}
-source("sbd_1_0.r")
+source("sbd.r")
 ```
 
 Before calculating the mean, it is desirable to inspect the distribution of observations. Typically there may be a few extremely slow speed observations (less than about 0.001 m s^-1^) that might reflect errors in sequence definition, or sequences in which the animal essentially didn't move, and probably shouldn't therefore be included in the data. There may also be unrealistically fast speeds because of errors in the calculation process. Inspecting the distribution will help to show the extent of these problems (Fig. 3). 
 
-```{r fig.cap="Fig. 3. Example distribution of speed observations, showing a small number of extreme observations, particularly at the lower end."}
+```{r fig.cap="Example distribution of speed observations, showing a small number of extreme observations, particularly at the lower end."}
 speeds <- subset(seqdat, species==sp )$speed
 hist(log10(speeds), main="", xlab="Speed (log10[m/s])")
 ```
@@ -163,7 +162,7 @@ source("distancedf.r")
 
 The first argunment to `fitdf` is a formula indicating the column containing distance data  on the left, and covariate columns on the right (or 1 if there are none). The second argument is used to name a dataframe containing the required data. Within the `fitdf` function, models are fitted using the the `ds` function from the package `Distance`, and additional arguments to `fitdf` are passed to `ds`. Full option details can be found in the `Distance` documentation. For radial distance, a point transect is required. Typically a hazard rate model is appropriate (`key=hr`), and flexibility adjustment terms are un-necessary (order=0) (Rowcliffe et al. 2011), so for simplicity here we fit a single model with these characteristics. The result is a named list with elements `ddf` (a detection function model object as described in `Distance` documentation), and `edd` (a list holding estimates of the effective detection distance and its precision). Model fit can be inspected by plotting the ddf component of the result (Fig. 4). If extreme values are detected, as in standard distance sampling they can be removed by using the `truncation` argument to define the maximum distance to include in the analysis.
 
-```{r message=FALSE, fig.cap="Fig. 4. Example distribution of radial distances and fitted detection function."}
+```{r message=FALSE, fig.cap="Example distribution of radial distances and fitted detection function."}
 dzdat <- subset(posdat, frame_count==1 & species==sp)
 radmod <- fitdf(radius~1, dzdat, transect="point", key="hr", order=0, truncation=10)
 radmod$edd
@@ -172,7 +171,7 @@ plot(radmod$ddf, pdf=TRUE)
 
 Angle estimation proceeds in more or less the same way, but with a line-type transect and half-normal detection function (both default options). Angle observations left of the centre of the camera's field of view are registered as negative values in the example data, which can't be modelled. It is therefore necessary to convert angles to absolute values before analysis.
 
-```{r message=FALSE, fig.cap="Fig. 5. Example distribution of angular distances and fitted detection function."}
+```{r message=FALSE, fig.cap="Example distribution of angular distances and fitted detection function."}
 dzdat$angle <- abs(dzdat$angle)
 angmod <- fitdf(angle~1, dzdat, order=0)
 angmod$edd
