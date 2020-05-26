@@ -60,9 +60,13 @@ decimal.time <- function(dat, sep=":"){
 
 #Extracts and separates tags from image metadata. When contacts are flagged and/or
 #species labelled, expects the respective column headings "contact" and "species" 
-#to be used. Where multiple species or individuals per image are tagged, these 
-#headings should be suffixed with integers indicating the ith contact (eg contact2
-#and species2 for the second species contact in an image).
+#to be used. Where multiple categories per image are tagged, these headings should
+#be suffixed with integers linking the categories.  For example, an image containing
+#individuals of two species (let's call them spA and spB), where the image is the first
+#contact for spB but not spA, could be given the following tags:
+# species1: spA
+# species2: spB
+# contact2
 
 #INPUT
 
@@ -70,17 +74,18 @@ decimal.time <- function(dat, sep=":"){
 #fieldsep: character(s) used to separate fields in the tags
 #headsep: character(s) used to separate headings from values within fields
 #tagcol: name of the column in dat containing the tags
-#exifcols: names of other columns in dat to retain in the output
+#datecol: names of the column containing image date/time (use NULL if not requiered)
+#addcols: name(s) of additional columns in dat to retain in the output (use NULL if none requiered)
 
 #OUTPUT
 
 #A dataframe of tag data separated into columns, with any additional columns 
-#specified by exifcols. When CreateDate is included in exifcols, an additional 
-#radian time of day column is added. When more than one animal is recorded per 
-#image, second and further records are appended as additional rows.
+#specified by exifcols. When datecol is specified, it is returned in POSIXct format,
+#and an additional radian time of day column is added. When more than one animal is recorded per 
+#image (as in the above example), second and further records are appended as additional rows.
 
-extract.tags <- function(dat, fieldsep=", ", headsep=": ", tagcol="Keywords",
-                         exifcols=c("SourceFile", "CreateDate", tagcol)){
+extract.tags <- function(dat, fieldsep=", ", headsep=": ", tagcol="Keywords", 
+                         datecol="DateTimeOriginal", addcols=c("SourceFile", tagcol)){
   
   f1 <- function(x,i) if(i==1) x[i] else
       if(length(x)==1) 1 else x[i]
@@ -110,7 +115,14 @@ extract.tags <- function(dat, fieldsep=", ", headsep=": ", tagcol="Keywords",
                paste(sort(duff), collapse=" "))) else
                  dat3
   }
-
+  
+  if(!tagcol %in% names(dat)) stop("tagecol is not present in column names of dat")
+  if(!is.null(datecol)){
+    if(length(datecol)>1) stop("datecol must be a single name or null")
+    if(!datecol %in% names(dat)) stop("datecol is not present in column names of dat")
+  }
+  if(!is.null(addcols) & !all(addcols %in% names(dat))) stop("not all names in addcols are present in column names of dat")
+  
   dat1 <- as.character(dat[, tagcol])
   dat1[which(dat1=="")] <- "NoTags"
   datlist1 <- strsplit(dat1, fieldsep)
@@ -119,27 +131,28 @@ extract.tags <- function(dat, fieldsep=", ", headsep=": ", tagcol="Keywords",
                      head = unlist(lapply(datlist2, f2, i=1)),
                      val = unlist(lapply(datlist2, f2, i=2)),
                      stringsAsFactors = FALSE)
-  dat3 <- tag.error.check()
-  edat <- dat[, exifcols]
-  if("CreateDate" %in% exifcols){
-    cd <- as.character(edat$CreateDate)
-    times <- unlist(lapply(strsplit(cd, " "), function(x) x[2]))
-    edat$time <- decimal.time(times)*2*pi
-    nas <- which(is.na(edat$time))
-    if(length(nas)>0) 
-      warning(paste("CreateDate format was not recognisable in row(s):",
-                    paste(nas, collapse="")))
+  dat3 <- tag.error.check()[,-1]
+  edat <- dat[, c(addcols, datecol), drop=FALSE]
+  if(!is.null(datecol)){
+    edat[, datecol] <- fasttime::fastPOSIXct(edat[, datecol], tz="UTC")
+    edat$radiantime <- (hour(edat[,datecol]) + minute(edat[,datecol])/60 + second(edat[,datecol])/60^2) * pi/12
   }
-  dat4 <- cbind(edat, dat3[, -1])
-  dat5 <- dat4
-  spcols <- names(dat4)[grepl("species", names(dat4))]
-  if(length(spcols)>1){
-    for(sp in spcols[-1])
-      dat5 <- rbind(dat5, subset(dat4, !is.na(dat4[,sp])))
-  }
-  dat5 <- dat5[, !names(dat5) %in% c(spcols[-1], sub("species", "contact", spcols[-1]))]
-  names(dat5)[pmatch(c("contact","species"), names(dat5))] <- c("contact","species")
-  dat5
+  colnms <- names(dat3)
+  gotnums <- grepl("\\d", colnms)
+  collets <- gsub("\\d", "", colnms)
+  colnums <- gsub("\\D", "", colnms)
+  lets <- unique(collets[gotnums])
+  if(any(gotnums)) nums <- unique(colnums[gotnums]) else nums <- 1
+  basedat <- dat3[, !gotnums, drop=FALSE]
+
+  res <- lapply(nums, function(n){
+    cols <- paste0(lets, n)
+    subdat <- dat3[, cols[cols %in% names(dat3)]]
+    names(subdat) <- lets
+    if(n==1) i <- TRUE else i <- apply(subdat, 1, function(x) !all(is.na(x)))
+    cbind(edat[i,], basedat[i, , drop=F], subdat[i,])
+  })
+  data.table::rbindlist(res)
 }
 
 #read.multi
