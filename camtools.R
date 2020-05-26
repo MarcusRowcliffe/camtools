@@ -74,8 +74,13 @@ decimal.time <- function(dat, sep=":"){
 #fieldsep: character(s) used to separate fields in the tags
 #headsep: character(s) used to separate headings from values within fields
 #tagcol: name of the column in dat containing the tags
+<<<<<<< HEAD
 #datecol: names of the column containing image date/time (use NULL if not required)
 #addcols: name(s) of additional columns in dat to retain in the output (use NULL if none required)
+=======
+#datecol: names of the column containing image date/time (use NULL if not requiered)
+#addcols: name(s) of additional columns in dat to retain in the output (use NULL if none requiered)
+>>>>>>> aadfee5b6edbab48bcfca0080a631f0a4c63ec7b
 
 #OUTPUT
 
