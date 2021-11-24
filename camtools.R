@@ -350,10 +350,11 @@ thin.events <- function(obsdat, interval, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 
 #OUTPUT
 # A stations by species matrix of observation counts
+
 event.count <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
   error.check(obsdat, tz, format, depdat)
 
-  checked.obs <- check.dates(obsdat, depdat)
+  checked.obs <- check.dates(obsdat, depdat, format, tz)
   obsdat <- checked.obs$good.data
   if(nrow(checked.obs$bad.data)>0)
     warning("Some observations fall outide given deployment times and were discarded\n  Use check.dates() to check which")
@@ -365,15 +366,14 @@ event.count <- function(obsdat, depdat, format="%Y:%m:%d %H:%M:%S", tz="UTC"){
 
   effort.days <- as.numeric(with(depdat, difftime(stop, start, units="days")))
   effort.days <- tapply(effort.days, depdat$station, sum)
-  events <- table(obsdat$station, obsdat$species)
-  station <- rownames(effort.days)
-  events <- events[match(station, rownames(events)), ]
+  events <- as.data.frame.matrix(table(obsdat$station, obsdat$species))
+  station <- names(effort.days)
+  events <- events[match(station, rownames(events)), , drop=FALSE]
   events[is.na(events)] <- 0
   rownames(events) <- NULL
   effort.days <- as.vector(effort.days)
-  data.frame(station, effort.days, as.data.frame.matrix(events))
+  data.frame(station, effort.days, events)
 }
-
 
 #get.dmatrix
 #Create a detection matrix for occupancy analysis
