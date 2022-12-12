@@ -82,25 +82,24 @@ get_occasion_cuts <- function(depdat, interval=1, start_hour=0){
 # trim: if TRUE, detection records for all deployment occasions with less 
 #       than full interval effort set missing, otherwise only those with zero 
 #       effort.
+# species: which species to create the detection matrix for; default "all"
+#          returns for all species in obsdat$species
+# output: whether to return detection matrices as array or list
 #
 # OUTPUT
 # A list with elements:
-#  matrix: the detection matrix
+#  matrix: an array or list of the detection matrices; when multiple species 
+#          are selected, a species x sites x occasions array is when 
+#          output="array", otherwise a named list.
 #  effort: a matrix of effort (days) for each deployment occasion
 #  cuts: a vector of the time cuts defining occasions
 #  interval: the occasion interval length in days
-#
-# EXAMPLE
-# obsdat <- read.csv("observations.csv")
-# depdat <- read.csv("deployments.csv")
-# mat <- get_detection_matrix(subset(obsdat, species=="fox"), depdat,
-#                             interval = 3,
-#                             trim = TRUE)
 get_detection_matrix <- function(obsdat, depdat, 
                                  interval=1, 
                                  start_hour=0,
                                  trim=FALSE,
-                                 species="all"){
+                                 species="all",
+                                 output=c("array", "list")){
   
   make_dmat <- function(sp){
     dat <- subset(obsdat, species==sp)
@@ -118,6 +117,7 @@ get_detection_matrix <- function(obsdat, depdat,
     mat
   }
   
+  output <- match.arg(output)
   obsdat <- check_detection_data(obsdat, depdat)
   if(attributes(obsdat)$error) return(obsdat) else{
     cuts <- get_occasion_cuts(depdat, interval, start_hour)
@@ -143,13 +143,19 @@ get_detection_matrix <- function(obsdat, depdat,
     
     # CREATE DETECTION MATRIX
     allspp <- unique(obsdat$species)
-    if(species == "all") species <- allspp
+    if(length(species)==1) if(species=="all") species <- allspp
     if(!all(species %in% allspp))
-      stop("Not all species given are present in obsdat")
+      stop("Not all the species given are present in obsdat")
     mat <- sapply(species, make_dmat, simplify=FALSE)
-    if(length(species) > 1){
-      mat <- array(unlist(mat), dim=c(dim(mat[[1]]), length(mat)))
-      dimnames(mat) <- list(NULL, NULL, species)
+    if(output=="array"){
+      if(length(mat) == 1)
+        mat <- mat[[1]] else{
+          mat <- mat %>%
+            unlist() %>%
+            array(dim = c(dim(mat[[1]]), length(mat)),
+                  dimnames = list(rownames(effort), NULL, species)) %>%
+            aperm(c(3,1,2))
+        }
     }
 
     return(list(matrix=mat, effort=effort, cuts=cuts, interval=interval))
@@ -167,9 +173,9 @@ get_detection_matrix <- function(obsdat, depdat,
 # OUTPUT
 # A locations by occasions matrix matching that in the matrix input,
 # giving time since the last event at each location. Values are:
-#  When last event occurs before beginning of occasion: time from event to occasion midpoint
-#  When event occurs within occasion: 0
-#  When no events occur within or before occasion: NA
+#  when last event occurs before beginning of occasion: time from event to occasion midpoint
+#  when event occurs within occasion: 0
+#  when no events occur within or before occasion: NA
 get_tse_matrix <- function(eventdat, matrix){
   stt <- head(matrix$cuts, -1)
   stp <- tail(matrix$cuts, -1)
