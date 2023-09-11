@@ -12,16 +12,18 @@ library(tidyr)
 # is added, set to TRUE in the former case or FALSE in the latter.
 check_detection_data <- function(obsdat, depdat){
   # Necessary fields present?
-  fieldsOK <- all(c("timestamp", "locationID") %in% names(obsdat),
-                  c("start", "end", "locationID") %in% names(depdat))
+  fieldsOK <- all(c("locationID", "deploymentID", "species", "timestamp") %in% names(obsdat),
+                  c("locationID", "deploymentID", "start", "end") %in% names(depdat))
   if(!fieldsOK) 
     stop("Can't find the necessary data: obsdat must contain columns named 
-         timestamp and locationID; depdat must contain columns named start, 
-         end and locationID")
-
+         locationID, deploymentID, species and timestamp; 
+         depdat must contain columns named locationID, deploymentID, start and end")
+  obsmode <- apply(dplyr::select(obsdat, locationID, deploymentID), 2, mode)
+  depmode <- apply(dplyr::select(depdat, locationID, deploymentID), 2, mode)
+  if(any(c(obsmode, depmode) != "character"))
+    stop("locationID and deploymentID must hold character data in both obsdat and depdat")
+  
   # Found all locationIDs from obsdat in depdat?
-  obsdat$locationID <- as.character(obsdat$locationID)
-  depdat$locationID <- as.character(depdat$locationID)
   missingLocs <- unique(obsdat$locationID[!obsdat$locationID %in% depdat$locationID])
   if(length(missingLocs)>0)
     stop(paste("These locationID values in obsdat are missing from depdat:", 
@@ -66,20 +68,20 @@ get_occasion_cuts <- function(depdat, interval=1, start_hour=0){
 #
 # INPUT
 # obsdat: dataframe of observation data with (at least) columns:
-#   locationID: camera trap location identifier matchable with the same 
-#               key in depdat
-#   deploymentID: camera trap deployment identifier matchable with the same 
-#               key in depdat
+#   locationID: character camera trap location identifiers matchable with 
+#               locationID in depdat
+#   deploymentID: character camera trap deployment identifiers matchable with 
+#                 deploymentID in depdat
 #   species: species identifiers
 #   timestamp: POSIX date-times when observations occurred
 # depdat: dataframe of deployment data with one row per deployment and
 #   (at least) columns:
 #     start, end: POSIX data-times when deployments started 
 #                 and ended
-#     locationID: unique camera trap location identifier matchable with
+#     locationID: character camera trap location identifiers matchable with
 #                 locationID in obsdat
-#     deploymentID: camera trap deployment identifier matchable with the same 
-#                   key in obsdat
+#     deploymentID: character camera trap deployment identifier matchable with 
+#                   deploymentID in obsdat
 # interval: length of occasion interval in days.
 # start_hour: a number from 0 to 24 giving the time of day at which to start
 #             occasions.
