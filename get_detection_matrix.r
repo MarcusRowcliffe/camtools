@@ -18,7 +18,7 @@ check_detection_data <- function(obsdat, depdat){
     stop("Can't find the necessary data: obsdat must contain columns named 
          timestamp and locationID; depdat must contain columns named start, 
          end and locationID")
-  
+
   # Found all locationIDs from obsdat in depdat?
   obsdat$locationID <- as.character(obsdat$locationID)
   depdat$locationID <- as.character(depdat$locationID)
@@ -56,9 +56,9 @@ get_occasion_cuts <- function(depdat, interval=1, start_hour=0){
     mx <- max(depdat$end)
     mnlt <- as.POSIXlt(mn)
     mntime <- mnlt$hour + mnlt$min/60 + mnlt$sec/3600
-    mn <- if(mntime > start_hour) 
-      mn - 3600 * (mntime + start_hour) else
-        mn - 3600 * (mntime + 24 - start_hour)
+    diff <- start_hour - mntime
+    if(diff > 0) diff <- diff - 24
+    mn <- mn + 3600 * diff
     return(seq(mn, mx+interval*86400, interval*86400))
 }
 
@@ -66,31 +66,37 @@ get_occasion_cuts <- function(depdat, interval=1, start_hour=0){
 #
 # INPUT
 # obsdat: dataframe of observation data with (at least) columns:
-#   timestamp: POSIX date-times when observations occurred
-#   locationID: unique camera trap location identifier matchable with
-#       the same key in depdat
+#   locationID: camera trap location identifier matchable with the same 
+#               key in depdat
+#   deploymentID: camera trap deployment identifier matchable with the same 
+#               key in depdat
 #   species: species identifiers
+#   timestamp: POSIX date-times when observations occurred
 # depdat: dataframe of deployment data with one row per deployment and
 #   (at least) columns:
 #     start, end: POSIX data-times when deployments started 
 #                 and ended
 #     locationID: unique camera trap location identifier matchable with
 #                 locationID in obsdat
+#     deploymentID: camera trap deployment identifier matchable with the same 
+#                   key in obsdat
 # interval: length of occasion interval in days.
 # start_hour: a number from 0 to 24 giving the time of day at which to start
 #             occasions.
 # trim: if TRUE, detection records for all deployment occasions with less 
-#       than full interval effort set missing, otherwise only those with zero 
-#       effort.
+#       than full interval effort set missing, otherwise (default) only those 
+#       with zero effort.
 # species: which species to create the detection matrix for; default "all"
 #          returns for all species in obsdat$species
 # output: whether to return detection matrices as array or list
 #
 # OUTPUT
 # A list with elements:
-#  matrix: an array or list of the detection matrices; when multiple species 
-#          are selected, a species x sites x occasions array is when 
-#          output="array", otherwise a named list.
+#  matrix: an array or list of detection matrices; 
+#   when output=list, a named list of species-specific locations x occasions matrices; 
+#   when output=array:
+#     if a single species is selected, a locations x occasions matrix; 
+#     if multiple species are selected, a species x locations x occasions matrix. 
 #  effort: a matrix of effort (days) for each deployment occasion
 #  cuts: a vector of the time cuts defining occasions
 #  interval: the occasion interval length in days
@@ -103,15 +109,24 @@ get_detection_matrix <- function(obsdat, depdat,
   
   make_dmat <- function(sp){
     dat <- subset(obsdat, species==sp)
-    ijk <- expand.grid(dep=1:ndep, occ=1:nocc, obs=1:nrow(dat))
-    loc <- depdat$locationID[ijk$dep]
-    isin <- dat$timestamp[ijk$obs] >= cuts[ijk$occ] & 
-      dat$timestamp[ijk$obs] <= cuts[ijk$occ+1] & 
-      dat$locationID[ijk$obs] == loc
-    mat <- isin %>%
-      tapply(list(loc, ijk$occ), any) %>%
-      as.numeric() %>%
-      matrix(ncol=nocc)
+    dat$occasion <- findInterval(dat$timestamp, cuts)
+    empty_occs <- which(!1:nocc %in% unique(dat$occasion))
+    empty_locs <- setdiff(depdat$locationID, dat$locationID)
+    if(length(empty_locs)>0)
+      dat <- dplyr::bind_rows(dat, data.frame(locationID = empty_locs))
+    if(length(empty_occs)>0)
+      dat <- dplyr::bind_rows(dat, data.frame(occasion = empty_occs))
+    mat <- dat %>%
+      tidyr::pivot_wider(id_cols=locationID, 
+                         names_from=occasion, 
+                         values_from=timestamp,
+                         names_sort = TRUE,
+                         values_fill = 0,
+                         values_fn = function(x) return(1)) %>%
+      dplyr::select(-1) %>%
+      as.matrix()
+    if(length(empty_locs)>0) mat <- mat[, -ncol(mat)]
+    if(length(empty_occs)>0) mat <- head(mat, -1)
     if(trim) mat[effort<interval] <- NA else
       mat[effort==0] <- NA
     mat
@@ -133,10 +148,11 @@ get_detection_matrix <- function(obsdat, depdat,
                          difftime(end[ij$dep], cuts[ij$occ+1], units="day"))
     ) %>%
       apply(1, function(x){
-        signsum <- sum(sign(x))
-        ifelse(signsum==0, 0, 
-               ifelse(signsum==4, interval, 
-                      ifelse(x[1]<=0, x[2], x[3])))
+        signsum_tot <- sum(sign(x))
+        signsum_mid <- sum(sign(x[2:3]))
+        ifelse(signsum_tot == 4, interval, 
+               ifelse(signsum_tot == 2, ifelse(x[1]<=0, x[2], x[3]),
+                      ifelse(signsum_mid == 0, 0, interval + sum(x[c(1,4)]))))
       }) %>%
       matrix(ncol=nocc) %>%
       apply(2, tapply, depdat$locationID, sum)
@@ -195,3 +211,4 @@ get_tse_matrix <- function(eventdat, matrix){
   res[abs(res) < int/2] <- 0
   res
 }
+
