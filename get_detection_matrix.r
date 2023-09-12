@@ -176,7 +176,9 @@ get_detection_matrix <- function(obsdat, depdat,
         }
     }
 
-    return(list(matrix=mat, effort=effort, cuts=cuts, interval=interval))
+    res <- list(matrix=mat, effort=effort, cuts=cuts, interval=interval)
+    class(res) <- "detection.matrix"
+    return(res)
   }
 }
 
@@ -194,7 +196,15 @@ get_detection_matrix <- function(obsdat, depdat,
 #  when last event occurs before beginning of occasion: time from event to occasion midpoint
 #  when event occurs within occasion: 0
 #  when no events occur within or before occasion: NA
+
 get_tse_matrix <- function(eventdat, matrix){
+  if(!"data.frame" %in% class(eventdat))
+    stop("eventdat must be a dataframe")
+  if(class(matrix) != "detection.matrix")
+    stop("matrix must be an object of class detection.matrix created using get_detection_matrix()")
+  if(!all(c("locationID", "timestamp") %in% names(eventdat)))
+    stop("evendata must contain (at least) columns locationID and timestamp")
+  
   stt <- head(matrix$cuts, -1)
   stp <- tail(matrix$cuts, -1)
   midpoints <- stt + difftime(stp, stt) / 2
